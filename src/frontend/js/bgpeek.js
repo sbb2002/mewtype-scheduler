@@ -20,6 +20,33 @@ let peeking = false;
 let unlockT = 0;
 let touch = null;
 
+// 첫 방문 안내(운영자 11-10) — 위로 미는 손 모양 + 「위로 밀어 배경 보기」. 이 기기에서 처음 한 번만:
+// 위로 튕겨 배경을 열면 바로 사라지고, 안내가 떠 있은 지 15초가 지나도 사라지며 다시 뜨지 않는다.
+const CUE_KEY = "bgpeek-cue";
+const CUE_SHOW_MS = 1200;   // 페이지가 자리 잡은 뒤 뜬다
+const CUE_LIFE_MS = 15000;
+let cue = null;
+let cueT = 0;
+
+function cueSeen() {
+  try { return localStorage.getItem(CUE_KEY) === "1"; } catch { return false; }   // 저장 불가 기기는 매번 보여 준다
+}
+
+function dismissCue() {
+  if (!cue || cue.hidden) return;
+  clearTimeout(cueT);
+  try { localStorage.setItem(CUE_KEY, "1"); } catch { /* 저장 불가 */ }
+  cue.classList.remove("is-on");
+  setTimeout(() => { if (!cue.classList.contains("is-on")) cue.hidden = true; }, 400);
+}
+
+function showCue() {
+  if (!cue || cueSeen() || !PHONE.matches || peeking) return;
+  cue.hidden = false;
+  requestAnimationFrame(() => cue.classList.add("is-on"));
+  cueT = setTimeout(dismissCue, CUE_LIFE_MS);
+}
+
 const root = document.documentElement;
 
 function setInert(on) {
@@ -34,6 +61,7 @@ function setInert(on) {
 function hide() {
   if (peeking || !PHONE.matches) return;
   if (root.hasAttribute("data-bday-full")) return;   // 생일 「온전히 보기」 중이면 이미 배경만 보인다
+  dismissCue();   // 한 번 해 보면 안내는 끝
   peeking = true;
   clearTimeout(unlockT);
   document.activeElement?.blur?.();
@@ -99,8 +127,21 @@ export function initBgPeek() {
   catcher.id = "bg-peek-catch";
   catcher.hidden = true;
   catcher.setAttribute("aria-label", "화면 되돌리기");
-  catcher.addEventListener("click", show);
+  // 조작 패널(UFO)이 떠 있으면 바깥 누름은 패널만 닫는다 — 예고 화면으로 되돌리지 않는다(1동작 1액션, bgdomegl.js 가 받는다)
+  catcher.addEventListener("click", () => {
+    if (root.hasAttribute("data-bg-panel")) { document.dispatchEvent(new Event("bgpanel-dismiss")); return; }
+    show();
+  });
   document.body.appendChild(catcher);
+
+  // 첫 방문 안내 — 손 모양은 장식이라 읽기 전용 · 터치 통과(pointer-events: none). 글자 · 손 모양 모두 정적 문자열
+  cue = document.createElement("div");
+  cue.id = "bg-peek-cue";
+  cue.hidden = true;
+  cue.setAttribute("aria-hidden", "true");
+  cue.innerHTML = `<div class="bgp-cue__hand"><i></i><i></i><i></i></div><span class="bgp-cue__txt">위로 밀어 배경 보기</span>`;   // 고정 문자열(데이터 아님)
+  document.body.appendChild(cue);
+  if (PHONE.matches && !cueSeen()) setTimeout(showCue, CUE_SHOW_MS);
 
   board.addEventListener("touchstart", onTouchStart, { passive: true });
   board.addEventListener("touchend", onTouchEnd, { passive: true });

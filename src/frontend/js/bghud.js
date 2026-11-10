@@ -263,7 +263,7 @@ export function createHud({ onLock, onZoom }) {
         const kk = 1 - Math.min(1, near / 90), rate = 0.6 + 4.4 * kk * kk;   // 멀면 초당 0.6 번 · 코앞이면 5 번
         pulsePh += f.dt * rate;
         const ph = pulsePh % 1, beat = Math.exp(-ph * 7) + 0.55 * Math.exp(-Math.pow((ph - 0.22) * 9, 2));   // 쿵 · 딱 두 박
-        const hue = Math.round(215 * kk);   // 0 빨강 → 30 주황 → 55 노랑 → 120 초록 → 215 파랑(가까울수록)
+        const hue = Math.round(215 * (1 - kk));   // 0 빨강 → 30 주황 → 55 노랑 → 120 초록 → 215 파랑(멀수록). kk 는 가까울수록 1 이라 뒤집어 쓴다
         pulse.style.setProperty("--pc", `hsl(${hue} 95% 58%)`);
         pulseDot.style.transform = `scale(${(0.8 + 0.45 * beat).toFixed(2)})`;
         pulseRing.style.transform = `scale(${(1 + 1.6 * ph).toFixed(2)})`; pulseRing.style.opacity = (0.7 * (1 - ph)).toFixed(2);

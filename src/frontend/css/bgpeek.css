@@ -83,6 +83,60 @@
   }
   #bg-peek-catch[hidden] { display: none; }
   #bg-peek-catch:focus { outline: none; }
+
+  /* ④ 첫 방문 안내 — 손이 위로 미는 모양(세 줄 꺾쇠가 차례로 올라간다) + 「위로 밀어 배경 보기」. 누르는 게 아니라 위로 미는 것이라 통과(pointer-events: none) */
+  #bg-peek-cue {
+    position: fixed;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 34vh);
+    translate: -50% 0;
+    z-index: 965;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .4s ease;
+  }
+  #bg-peek-cue[hidden] { display: none; }
+  #bg-peek-cue.is-on { opacity: 1; }
+  #bg-peek-cue .bgp-cue__hand { position: relative; width: 56px; height: 56px; }
+  #bg-peek-cue .bgp-cue__hand i {
+    position: absolute;
+    left: 50%;
+    width: 18px;
+    height: 18px;
+    border-left: 4px solid #fff;
+    border-top: 4px solid #fff;
+    border-radius: 2px;
+    filter: drop-shadow(0 0 6px rgba(255, 255, 255, .7));
+    translate: -50% 0;
+    rotate: 45deg;
+    opacity: 0;
+    animation: bgp-cue-up 1.8s ease-in-out infinite;
+  }
+  #bg-peek-cue .bgp-cue__hand i:nth-child(1) { top: 4px; }
+  #bg-peek-cue .bgp-cue__hand i:nth-child(2) { top: 19px; animation-delay: .22s; }
+  #bg-peek-cue .bgp-cue__hand i:nth-child(3) { top: 34px; animation-delay: .44s; }
+  #bg-peek-cue .bgp-cue__txt {
+    padding: 7px 16px;
+    border-radius: 999px;
+    background: rgba(18, 14, 30, .58);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    white-space: nowrap;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+  }
+  @keyframes bgp-cue-up {
+    0%   { opacity: 0; transform: translateY(16px); }
+    35%  { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-14px); }
+  }
 }
 
 @media (max-width: 767px) and (prefers-reduced-motion: reduce) {
@@ -93,4 +147,8 @@
     transition-delay: 0ms;
   }
   html.bg-peek #notice, html.bg-peek #board, html.bg-peek #pager-dots, html.bg-peek #foot, html.bg-peek #player-frame { translate: none; opacity: 0; }
+  /* 첫 방문 안내: 움직이지 않고 꺾쇠 세 개를 그대로 보여 준다 */
+  #bg-peek-cue, #bg-peek-cue.is-on { transition: opacity 180ms linear; }
+  #bg-peek-cue .bgp-cue__hand i { animation: none; opacity: .9; }
+  #bg-peek-cue .bgp-cue__hand i:nth-child(n+2) { opacity: .55; }
 }

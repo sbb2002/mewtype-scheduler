@@ -161,7 +161,7 @@ export function createUfoPanel() {
   // 멀리 있을 때 안내(Approach.dc.html) — 누르기는 통과
   const hint = h("div", "ufo-hint", [
     s("svg", { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "#4fe3ff", "stroke-width": "1.6", "aria-hidden": "true" }, [s("path", { d: "M8 8 4 4M4 4v4M4 4h4M16 16l4 4M20 20v-4M20 20h-4" })]),
-    h("span", null, ["두 손가락으로 벌려 가운데로 다가가 보세요"]),
+    h("span", null, ["줌인하여 가까이 다가가보세요."]),
   ], { "aria-hidden": "true" });
   const hintLine = h("span", "ugr-wline");   // 사라질 때 지나가는 흰 선(bggear.js dissolve)
   hint.append(hintLine);

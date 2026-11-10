@@ -433,3 +433,7 @@
 /* ── (11-09) 가끔 나타나는 YMMT 별자리 · UFO 캔버스(js/bgfx.js) */
 .bgfx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 971; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .25s ease, visibility 0s linear .25s; }
 .bgfx.is-on { opacity: 1; visibility: visible; transition: opacity .25s ease; }
+/* 돔 안에서는 공중 무늬 층(bgdm-air) 안에 들어가 쌓인다: 무늬 · UFO · 별자리(z 1) < 바닥 콘솔(z 2) — UFO 가 바닥을 뚫고 지나가지 않게 */
+#bgdeco .bgdm-air .bgfx { position: absolute; z-index: 1; }
+#bgdeco .bgdm-air__piece { z-index: 1; }
+#bgdeco .bgcs { z-index: 2; }

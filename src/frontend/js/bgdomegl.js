@@ -1452,7 +1452,7 @@ export function createDomeGL(host, isPaused) {
     },
   });
   let hudZoomFrom = null, hudZoomAt = -Infinity, dbgView = null;
-  const fx = createFx();   // (11-09) 가끔 나타나는 YMMT 별자리 · UFO
+  const fx = createFx(air);   // (11-09) 가끔 나타나는 YMMT 별자리 · UFO — 공중 무늬 층 안(바닥 콘솔 뒤)
   // (11-09 운영자) 해금 · 탐험 완료 = 즉시 연출(진동 · 소리, 화면 효과는 bghud.js) → 2초 뒤 그 기능으로 자동 이동 → 안내 카드(이동 방법)
   let guideTimer = 0;
   function unlockFx(g) {
@@ -1633,6 +1633,8 @@ export function createDomeGL(host, isPaused) {
   //   바닥 조명(렌즈 · 빛기둥 · 테두리) = 테마 색 → 붉은빛(초당 1.6 번 맥동), 화면 = 회전하는 붉은 경광등 빛줄기 + 맥동하는 붉은 가장자리(.ufo-siren, css/bgpanel.css).
   let alarmK = 0, alarmDrawn = 0;
   let panelSuppressed = false, gearWas = false;   // (11-09 운영자) 워프 기어 패널이 열리면 조작 패널을 닫고, 멀리 갔다가 다시 다가오면 보인다
+  // (11-10 운영자 「1동작 1액션」) 조작 패널이 떠 있을 때 바깥을 누르면 패널만 닫는다 — 예고 화면으로 돌아가지 않는다(bgpeek.js 가 이 신호를 보낸다). 멀리 갔다 와야 다시 뜬다
+  document.addEventListener("bgpanel-dismiss", () => { if (ufoPanel.on) panelSuppressed = true; });
   const siren = document.createElement("div"); siren.className = "ufo-siren"; siren.setAttribute("aria-hidden", "true"); siren.hidden = true;
   siren.append(document.createElement("i"), document.createElement("b"));
   document.body.appendChild(siren);
@@ -2454,6 +2456,7 @@ export function createDomeGL(host, isPaused) {
       ufoPanel.setFreeNav(unlocked(unlockS, "freenav") ? [...unlockS.vis.map((k) => ({ key: k, name: placeName(k), here: here === k })), ...(unlocked(unlockS, "moon") ? [{ key: "moon", name: placeName("moon"), here: here === "moon" }] : [])] : null);   // (해금) 길게 누르기가 열린 뒤 처음 몇 번 — 패널이 뜰 때 칸이 반짝여 알려 준다
     }
     ufoPanel.set(want);
+    document.documentElement.toggleAttribute("data-bg-panel", want && ufoPanel.on);   // bgpeek.js: 패널이 떠 있으면 바깥 누름은 패널만 닫는다
     ufoConsole.setActive(want);   // 패널이 떠 있는 동안 바닥 제어 장치 화면에 불
     if (!sky) panelResume = false;
     // 「두 손가락으로 벌려…」 안내(운영자 11-09) — 이 기기에서 최초 1회만, 보이는 동안 10초 뒤(또는 실제로 벌려 본 뒤) 테마의 도트 + 흰 선으로 사라진다
@@ -2466,7 +2469,7 @@ export function createDomeGL(host, isPaused) {
       else ufoPanel.setHint(hintA);
     }
   }
-  function hideUfo() { fx.update({ active: false }); ufoPanel.set(false); if (!hintDissolving) ufoPanel.setHint(0); ufoConsole.setVisible(false); hud.update({ active: false }); }
+  function hideUfo() { fx.update({ active: false }); ufoPanel.set(false); document.documentElement.removeAttribute("data-bg-panel");if (!hintDissolving) ufoPanel.setHint(0); ufoConsole.setVisible(false); hud.update({ active: false }); }
   /** 시선 HUD — 배경 보기 중, 조작 패널 · 하늘 전환이 없을 때. 성간 이동 중엔 눈금만(잡기 없음) */
   function updateHud(peek, dt) {
     const active = peek && !ufoPanel.on && !sky;

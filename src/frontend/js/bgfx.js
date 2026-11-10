@@ -24,11 +24,12 @@ export function dopplerTint(D) {
   return D >= 1 ? { rgb: [120, 190, 255], a: 0.75 * k } : { rgb: [255, 70, 40], a: 0.8 * k };
 }
 
-export function createFx() {
+/** parent = 돔 공중 무늬 층(bgdm-air) — 바닥 콘솔보다 뒤에 놓여 UFO · 별자리가 바닥을 뚫지 않는다(bgdeco.css). 없으면 body 에 붙인다. */
+export function createFx(parent = document.body) {
   const cv = document.createElement("canvas");
   cv.className = "bgfx"; cv.setAttribute("aria-hidden", "true");
   const g = cv.getContext("2d");
-  document.body.appendChild(cv);
+  parent.appendChild(cv);
   const ufoImg = new Image(); ufoImg.src = new URL("../assets/birthday/ufo.png", import.meta.url).href;
   const tint = document.createElement("canvas"); tint.width = tint.height = 96;   // 색을 입힌 UFO 한 장(매 프레임 다시 칠함)
   const tg = tint.getContext("2d");
