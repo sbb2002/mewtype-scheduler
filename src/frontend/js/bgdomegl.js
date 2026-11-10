@@ -24,7 +24,8 @@ import { loadUnlock, saveUnlock, has as unlocked, chooserItems, randomDest, arri
 import { createHud } from "./bghud.js";
 import { dirFromAzAlt, toSpace, toDome, aimSpace, sepDeg, photoDir, moonFrame, levelSpace } from "./bghudlogic.js";
 import { createFx } from "./bgfx.js";
-import { MEMBER_DOT_COLORS } from "./config.js";
+import { MEMBER_LIGHT_COLORS, FALLBACK_CHANNEL_ORDER } from "./config.js";
+import { lastLive, pulse, forceLive } from "./bglive.js";   // (bg-dome, 11-10) 돔 바닥 라이브 조명
 import * as sound from "./bgsound.js";
 import { createWarp, shiftGear, tickWarp, warpReady, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
 
@@ -45,6 +46,7 @@ const EYE = EYE0.slice();      // 지금 눈 위치 — 프레임마다 갱신
 const BASE_PITCH = 28 * DEG;
 const PITCH_MIN = -55 * DEG, PITCH_MAX = 88 * DEG;
 const CLOUD_MS = 160;                  // 카메라가 멈춰 있을 때 구름 흐름 다시 그리기 간격
+const LIVE_DRAW_MS = 100;              // (bg-dome, 11-10) 라이브 조명 점멸 중 다시 그리는 간격(약 10fps — 이보다 자주 그리지 않는다)
 const MAX_DPR = 1.5;
 const LOW_DPR = 1;                     // (bg-dome, 11-10) 낮은 성능 등급의 해상도 상한(high = MAX_DPR)
 const QS = new URLSearchParams(window.location.search);
@@ -214,6 +216,8 @@ uniform mat3 uEqM;
 uniform vec3 uSkyBase; uniform float uGridA, uReflA;
 uniform vec3 uFloorIn, uFloorOut, uPad, uGlow, uRim;
 uniform float uFloorRefl, uLightK;
+// (bg-dome, 11-10) 라이브 조명: 조명 i 의 멤버 색(uLiveCol[i]) · 섞는 비율(uLiveK[i], 0 = 평소 uPad·uGlow 그대로)
+uniform vec3 uLiveCol[5]; uniform float uLiveK[5];
 out vec4 outColor;
 const float TAU = 6.2831853, D = 0.01745329;
 uniform vec3 E;   // 눈 위치 = EYE(줌으로 움직인다)
@@ -971,6 +975,11 @@ void main() {
     vec2 o = E.xz - cc;
     float tAxis = -dot(o, d.xz) / dxz2;
 
+    // (bg-dome, 11-10) 조명 i 의 색. 조명 배치: a = i·72° + 0.31rad, 위치 (sin a, cos a)·0.42 → 0번 = +z 쪽(장면 북 · 기본 시선 정면)에 가장 가깝고,
+    //   i 가 커질수록 위에서 본 시계 방향(+x = 동). 라이브 멤버 색은 uLiveK[i] = 0 이면 평소 색과 픽셀 단위로 같다.
+    vec3 padI = mix(uPad, uLiveCol[i], uLiveK[i]);
+    vec3 glowI = mix(uGlow, uLiveCol[i], uLiveK[i]);
+
     // 도함수는 위에서 구해 두므로 하늘 픽셀의 바닥 재질 계산은 생략해도 안전하다.
     if (floorK > 0.0) {
       vec2 v = P - cc;
@@ -978,7 +987,7 @@ void main() {
 
       // 조명 웅덩이와 하우징 바깥쪽의 짧은 접촉 그림자.
       float pool = 1.0 / (1.0 + dot(v, v) / 0.014);
-      fc += uGlow * pool * pool * 0.52 * uLightK;
+      fc += glowI * pool * pool * 0.52 * uLightK;
       float shadow = 1.0 - smoothstep(0.079, 0.105 + pw, length(v - vec2(0.003, -0.005)));
       fc *= 1.0 - shadow * 0.42;
 
@@ -988,7 +997,7 @@ void main() {
       vec2 rv = E.xz + tr * d.xz - cc;
       float rw = 0.048 + 0.08 * rh;
       float reflection = exp(-dot(rv, rv) / (rw * rw + pw * pw));
-      fc += uPad * reflection * (1.0 - rh) * (0.07 + fresnel) * uFloorRefl;
+      fc += padI * reflection * (1.0 - rh) * (0.07 + fresnel) * uFloorRefl;
 
       // 티타늄 외곽 턱 → 짙은 안쪽 벽 → 발광 렌즈. 모든 경계는 픽셀 면적으로 덮는다.
       float body = cover(dd - 0.087, pw, 0.5);
@@ -999,7 +1008,7 @@ void main() {
       fc = mix(fc, metal, body);
       fc = mix(fc, uFloorOut * 0.38, well);
       float glass = clamp(1.0 - dd * dd / (0.056 * 0.056), 0.0, 1.0);
-      fc = mix(fc, mix(uGlow * 0.65, uPad * 2.8, 0.28 + 0.72 * glass) * uLightK, lens);
+      fc = mix(fc, mix(glowI * 0.65, padI * 2.8, 0.28 + 0.72 * glass) * uLightK, lens);
       float lip = max(body - cover(dd - 0.084, pw, 0.5), 0.0);
       fc += uRim * lip * (0.15 + 0.65 * facing);
 
@@ -1008,7 +1017,7 @@ void main() {
       vec2 diagonal = av - vec2(0.053033);
       float dl = sqrt(min(dot(axial, axial), dot(diagonal, diagonal)));
       float lights = cover(dl - 0.003, pw, 0.5) * smoothstep(1.0, 3.0, 0.025 / pw);
-      fc += uPad * lights * 1.2 * uLightK;
+      fc += padI * lights * 1.2 * uLightK;
     }
 
     // 원통 교차 길이와 최근접 거리로 볼륨을 근사한다. 레이마칭/텍스처 샘플은 없다.
@@ -1024,7 +1033,7 @@ void main() {
       float path = min(span, 1.77245 * bw / dxz);
       float fade = (1.0 - bh) * (1.0 - bh);
       float dust = 0.98 + 0.02 * sin(bh * 57.0 + float(i) * 2.0 + uTime * 0.35);
-      beam += (uGlow * exp(-radial) * 0.75 + uPad * exp(-radial * 4.0) * 1.6) * path * fade * dust * 7.0 * uLightK;
+      beam += (glowI * exp(-radial) * 0.75 + padI * exp(-radial * 4.0) * 1.6) * path * fade * dust * 7.0 * uLightK;
     }
   }
 
@@ -1184,6 +1193,9 @@ const THEMES = {
     pad: hex("#fff3df"), glow: hex("#c4adee"), rim: hex("#c4b6cf"), floorRefl: 1.0, lightK: 1,
   },
 };
+
+// (bg-dome, 11-10) 라이브 조명 색 — 키 → 셰이더 uLiveCol 용 0~1 값(THEMES 의 hex 와 같은 방식). 키 없음 = 검정(어차피 uLiveK 0)
+const liveRGB = (key) => (key && MEMBER_LIGHT_COLORS[key] ? hex(MEMBER_LIGHT_COLORS[key]) : [0, 0, 0]);
 
 // ── 공중 무늬(콘의 파스텔 외곽선 장식에서 모양 규칙만 따왔다) ──
 const NS = "http://www.w3.org/2000/svg";
@@ -1656,6 +1668,22 @@ export function createDomeGL(host, isPaused) {
     siren.hidden = !(alarmK > 0 && peekNow);
     sound.alarm(alarmK);   // 경보음도 같은 세기로(bgsound.js) — 배경 보기가 아니어도 성간 이동 중이면 들린다
     if (!siren.hidden) siren.style.opacity = alarmK.toFixed(3);
+  }
+  // (bg-dome, 11-10) 라이브 조명 — 멤버가 라이브면 그 바닥 조명만 멤버 색으로 맥동(bglive.js 의 값). 경보 빨강이 우선: alarmK 만큼 라이브 색을 뺀다.
+  //   점멸 = high 등급 또는 배경 보기 중. 낮은 등급 + 예고보드 = 점멸 없이 멤버 색으로 켜 두기(다시 그리는 건 상태가 바뀔 때만).
+  let liveDirty = true, liveDrawAt = -Infinity;
+  const liveCol = new Float32Array(15), liveK = new Float32Array(5);
+  const liveAnimating = (peek) => !reducedMotion.matches && (!isLow() || peek) && (lastLive() || []).some((s) => s && s.live);
+  function liveUniforms() {
+    const slots = lastLive() || [];
+    const animate = !reducedMotion.matches && (!isLow() || document.documentElement.classList.contains("bg-peek"));
+    const k = pulse(performance.now(), !animate);   // 점멸 안 할 땐 1(멤버 색으로 켜 둠)
+    for (let i = 0; i < 5; i++) {
+      const s = slots[i] || { key: null, live: false };
+      liveCol.set(liveRGB(s.key), i * 3);
+      liveK[i] = s.live ? (1 - alarmK) * k : 0;
+    }
+    gl.uniform3fv(U["uLiveCol[0]"], liveCol); gl.uniform1fv(U["uLiveK[0]"], liveK);
   }
   function floorLights() {
     if (!(alarmK > 0) && !alarmDrawn) return;
@@ -2285,6 +2313,8 @@ export function createDomeGL(host, isPaused) {
     skyUniforms();
     jumpUniforms();
     floorLights();
+    liveUniforms();   // (bg-dome, 11-10) 라이브 조명(셰이더 uLiveCol · uLiveK)
+    liveDirty = false; liveDrawAt = performance.now();
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
     gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele; drawnRoll = rollS; drawnFov = fovK;
@@ -2501,7 +2531,7 @@ export function createDomeGL(host, isPaused) {
   //   아라레는 그 표에 없어(운영자 결정 — 아바타 평균색을 씀) 여기선 임시로 따뜻한 노랑 — 확인 필요.
   const starlight = document.createElement("div");
   starlight.className = "bg-starlight"; starlight.setAttribute("aria-hidden", "true");
-  ["#FFD27A", MEMBER_DOT_COLORS.yuno.dark, MEMBER_DOT_COLORS.nonoka.dark, MEMBER_DOT_COLORS.ritsu.dark, MEMBER_DOT_COLORS.miyako.dark].forEach((c, i) => starlight.style.setProperty(`--sl${i + 1}`, c));
+  FALLBACK_CHANNEL_ORDER.forEach((key, i) => starlight.style.setProperty(`--sl${i + 1}`, MEMBER_LIGHT_COLORS[key]));   // (bg-dome, 11-10) 색 표 = config.js MEMBER_LIGHT_COLORS (바닥 라이브 조명과 공유)
   document.body.appendChild(starlight);
   let starlightOn = null;
   function updateStarlight(peek) {
@@ -2618,7 +2648,7 @@ export function createDomeGL(host, isPaused) {
       const dYaw = Math.abs(Math.atan2(Math.sin(yaw - sky.yaw), Math.cos(yaw - sky.yaw)));
       if (dYaw + Math.abs(pitch - sky.pitch) > 6 * DEG || pinch || !peek) shortenSky(performance.now());
     }
-    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) + Math.abs(rollS - drawnRoll) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > frameGap(peek) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0)) || alarmK > 0 || alarmDrawn || fovK !== drawnFov || blurK > 0 || zblurOn) draw();
+    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) + Math.abs(rollS - drawnRoll) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > frameGap(peek) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0)) || alarmK > 0 || alarmDrawn || liveDirty || (liveAnimating(peek) && performance.now() - liveDrawAt >= LIVE_DRAW_MS) || fovK !== drawnFov || blurK > 0 || zblurOn) draw();
     raf = requestAnimationFrame(frame);
   }
 
@@ -2648,6 +2678,8 @@ export function createDomeGL(host, isPaused) {
     draw();
     syncLoop();   // 낮은 등급 · 예고보드 상태에서도 하늘 전환이 끝까지 돌도록
   }, { signal: life.signal });
+  // (bg-dome, 11-10) 라이브 멤버가 바뀌면(main.js poll → bglive.js publishLive) 다음 그림에 반영 — 쉬는 낮은 등급이면 바로 한 번 그린다
+  document.addEventListener("bg:live", () => { liveDirty = true; redrawIfResting(); }, { signal: life.signal });
   const themeObs = new MutationObserver(() => { draw(); syncLoop(); }); themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   // (bg-dome, 11-10) 배경 보기 진입 · 해제(클래스 변화) — 낮은 등급이 쉬고 있었으면 다시 돌리고, 나가면 다음 프레임에서 마지막 한 번 맞춘 뒤 쉰다
   const peekObs = new MutationObserver(() => syncLoop()); peekObs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
@@ -2703,6 +2735,7 @@ export function createDomeGL(host, isPaused) {
       }));
     }, 3000);
     window.__bgunlock = { get state() { return JSON.parse(JSON.stringify(unlockS)); }, get place() { return placeKey(); }, get hud() { return hud.debug; }, get targets() { return hudTargets(placeKey()).map((t) => ({ id: t.id, az: +(Math.atan2(t.dir[0], t.dir[2]) / DEG).toFixed(1), alt: +(Math.asin(t.dir[1]) / DEG).toFixed(1) })); } };
+    window.__bglive = (keys) => { forceLive(keys); liveDirty = true; if (!raf) draw(); };   // (bg-dome, 11-10) 확인용 — 멤버 키 배열을 라이브로 강제(["yuno"]), null 이면 실제 데이터
     window.__bgtier = { get tier() { return tier; }, get measuring() { return measuring; }, get samples() { return tierSamples.length; } };   // (bg-dome, 11-10) 확인용 — 지금 등급 · 실측 중 · 표본 수
     window.__bggear = (i) => { if (!star) startStar(); shiftGear(star.st, i); return { fovK, pullK, blurK, kick: fxKick }; };   // 확인용 — 성간 이동을 시작하고 기어를 바꿈
     window.__bgfx = () => ({ fovK, pullK, blurK, kick: fxKick, beta: star ? star.st.beta : null });

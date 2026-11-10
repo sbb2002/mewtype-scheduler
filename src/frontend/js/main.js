@@ -10,6 +10,7 @@ import { initBgView } from "./bgview.js";
 import { initBirthday } from "./birthdayui.js";
 import { initLongCopy, maybeShowCopyTip } from "./longcopy.js";
 import { createNetRecovery } from "./netrecover.js";   // (v4.11.7) 네트워크 실패 재시도 · 안내
+import { publishLive } from "./bglive.js";   // (bg-dome, 11-10) 돔 바닥 라이브 조명 — 라이브 멤버 값을 돔에 알린다
 import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS, APP_VERSION, APP_DATE } from "./config.js";
 
 const board = document.getElementById("board");
@@ -135,6 +136,7 @@ async function poll() {
 
   if (result.ok) {
     lastSchedule = result.data;
+    publishLive(lastSchedule);   // (bg-dome, 11-10) 같은 데이터여도 보낸다(가볍다) — 돔이 늦게 만들어져도 bglive.js 가 마지막 값을 들고 있다
     const j = JSON.stringify(result.data);
     if (j !== lastJSON) {
       lastJSON = j;

@@ -142,6 +142,7 @@ src/
       netrecover.js    # 조회 실패 복구 상태 기계 — 재시도 뒤에도 실패하면 화면 중앙 안내
       bgdeco.js bglogic.js   # 배경 장식 — 분홍 → 파랑 톤 + 떠다니는 로고 도형 · 폰 흔들면 흩어짐(bglogic = 순수 로직 · 물리, css/bgdeco.css)
       bgpeek.js bggyro.js bgdomegl.js bgtier.js   # 배경 보기(UFO 돔) — 튕겨 열기 · 자이로 · WebGL2 돔 장면(월면 · 가속 연출 · 해금 연결 전부). 성능 등급 high·low(bgtier.js 순수 판정, 11-10). 상세 SPEC 「배경 보기 UFO 돔」
+      bglive.js          # 돔 바닥 라이브 조명 — 조명 0~4 = channel_order 순서 ↔ 멤버 5명, 라이브 판정(state live) · 맥동 순수 로직 + 마지막 값(11-10)
       bgpanel.js bggear.js bgwarp.js bgsound.js   # 조작 패널 · 워프 기어 패널 · 속도 모형(순수) · 소리
       bgunlock.js bghud.js bghudlogic.js bgfx.js   # 해금 규칙(순수) · 시선 HUD · HUD 계산(순수) · 가끔 나오는 YMMT · UFO
       monitormines.js monitorminesui.js monitorbirthday.js   # 모니터링 페이지 지뢰찾기(모두 열기) · 방향 모으기

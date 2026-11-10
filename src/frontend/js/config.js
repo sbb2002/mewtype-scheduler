@@ -82,6 +82,15 @@ export const MEMBER_DOT_COLORS = {
   ritsu:  { dark: "#6296EC", light: "#588EE8" },
   miyako: { dark: "#8C69CE", light: "#805BC4" }
 };
+// (bg-dome, 11-10) 멤버 5색 — 별빛 조명(bgdomegl.js)과 돔 바닥 라이브 조명(bglive.js · 셰이더)이 같이 쓴다.
+// 아라레는 MEMBER_DOT_COLORS 에 없어 임시 따뜻한 노랑 — 확인 필요(운영자 결정 대기). 조명은 빛이라 밝게 테마에서도 dark 색을 쓴다.
+export const MEMBER_LIGHT_COLORS = {
+  arale: "#FFD27A",
+  yuno: MEMBER_DOT_COLORS.yuno.dark,
+  nonoka: MEMBER_DOT_COLORS.nonoka.dark,
+  ritsu: MEMBER_DOT_COLORS.ritsu.dark,
+  miyako: MEMBER_DOT_COLORS.miyako.dark
+};
 export const POLL_MS = 75000;
 export const COUNTDOWN_TICK_MS = 60000;
 export const FETCH_TIMEOUT_MS = 8000;
