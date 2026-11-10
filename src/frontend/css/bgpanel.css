@@ -360,7 +360,9 @@
 /* ── (11-09 해금 2단계) 시선 HUD — js/bghud.js, 디자인 = F5 시안. 돔(배경) 위 · 조작 패널(975) 아래. 누르기는 카드만 받는다 */
 .bghud { position: fixed; inset: 0; z-index: 972; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .25s ease, visibility 0s linear .25s; }
 .bghud.is-on { opacity: 1; visibility: visible; transition: opacity .25s ease; }
-.bghud-sky, .bghud-svg { position: absolute; inset: 0; width: 100%; height: 100%; }.bghud-svg text { font-family: var(--ufo-mono); font-variant-numeric: tabular-nums; }   /* 숫자 폭 고정 — 회전할 때 떨림 없음(제안 B-1) */
+.bghud-sky, .bghud-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* 숫자 폭 고정 · 슬래시 0(레퍼런스 ref1 · ref4 공통) — 0 과 O 를 구별 */
+.bghud-svg text { font-family: var(--ufo-mono); font-variant-numeric: tabular-nums slashed-zero; }
 .bghud-svg text.ko { font-family: "Noto Sans KR", system-ui, sans-serif; letter-spacing: 0; }   /* 한글 라벨 · 하늘 이름은 본문 글꼴(제안 B-2) */
 .bghud-probe { position: absolute; top: 0; left: 0; width: 0; height: env(safe-area-inset-top, 0px); visibility: hidden; }
 .bghud-card {
