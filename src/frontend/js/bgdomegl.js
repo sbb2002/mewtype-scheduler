@@ -2482,7 +2482,7 @@ export function createDomeGL(host, isPaused) {
       return [cx + x0 * ca - y0 * sa, cy - (x0 * sa + y0 * ca)];
     };
     const place = placeKey(), targets = hudTargets(place);
-    hud.update({ active: true, interact: !star, dt, yawDeg: yaw / DEG, pitchDeg: pitch / DEG, tele, ppd: F * Math.tan(DEG), fwd: B.fwd, project, targets, sky: placeName(place) });
+    hud.update({ active: true, interact: !star, dt, yawDeg: yaw / DEG, pitchDeg: pitch / DEG, tele, zoomR, ppd: F * Math.tan(DEG), fwd: B.fwd, project, targets, sky: placeName(place) });
     fx.update({ active: true, place, ymmtOn: unlocked(unlockS, "ymmt"), project, ppd: F * Math.tan(DEG), yawDeg: yaw / DEG, beta: star ? (star.frame ? star.frame.beta : star.st.beta) : 0, reduced: reducedMotion.matches });
   }
   // (3단계 보상) 별빛 조명 — 배경 보기 중 화면 아래에 멤버 5색이 은은하게(켜고 끄기 = 조작 패널). 색 = config.js MEMBER_DOT_COLORS(어둡게),
