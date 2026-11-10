@@ -368,12 +368,20 @@
   max-width: 420px; margin: 0 auto; display: grid; gap: 8px; pointer-events: none;
   /* (제안 A-4 · 7) 홀로그램 글래스 카드 — 어두운 유리 + 챔퍼 모서리. 글자 대비를 위해 불투명도는 76% */
   padding: 12px 14px; background: rgba(10, 8, 26, .76); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
-  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
   font-variant-numeric: tabular-nums;
   opacity: 0; transform: translateY(10px); transition: opacity .22s ease, transform .22s ease;
   font-family: "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
 }
 .bghud-card.is-on { opacity: 1; transform: none; pointer-events: auto; }
+/* (레퍼런스 ref1 · ref4) 카드 대각선 두 모서리에만 ㄱ자 꺾쇠 — 전체 테두리 대신 */
+.bghud-card::before, .bghud-card::after {
+  content: ""; position: absolute; width: 16px; height: 16px; pointer-events: none;
+  border: 0 solid var(--ufo-cyan); opacity: .85;
+}
+.bghud-card::before { left: -4px; top: -4px; border-left-width: 1.5px; border-top-width: 1.5px; }
+.bghud-card::after { right: -4px; bottom: -4px; border-right-width: 1.5px; border-bottom-width: 1.5px; }
+/* (레퍼런스 ref4 「v.1.32」 배지) NEW 는 솔리드 핑크 칩 */
+.bghud-card.is-new .bghud-k > span:not(.bghud-star) { color: #0a081a; background: var(--ufo-pink); padding: 1px 7px; line-height: 1.5; box-shadow: 0 0 10px rgba(255, 111, 181, .45); }
 .bghud-k { display: flex; align-items: center; gap: 6px; min-height: 12px; font: 500 9.5px var(--ufo-mono); letter-spacing: .14em; color: var(--ufo-pink); }
 .bghud-star { width: 12px; height: 12px; background: var(--ufo-pink); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); filter: drop-shadow(0 0 4px var(--ufo-pink)); }
 .bghud-star[hidden] { display: none; }

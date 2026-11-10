@@ -129,6 +129,7 @@ export function createHud({ onLock, onZoom }) {
     cardFor = t; cardInfo = info; revealT = performance.now();
     kText.textContent = info.k || "";
     kStar.hidden = info.k !== "NEW";
+    card.classList.toggle("is-new", info.k === "NEW");
     name.textContent = t.n;
     toLine.textContent = info.to || ""; toLine.hidden = !info.to;
     card.classList.add("is-on");
