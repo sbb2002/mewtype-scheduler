@@ -360,16 +360,29 @@
 /* ── (11-09 해금 2단계) 시선 HUD — js/bghud.js, 디자인 = F5 시안. 돔(배경) 위 · 조작 패널(975) 아래. 누르기는 카드만 받는다 */
 .bghud { position: fixed; inset: 0; z-index: 972; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .25s ease, visibility 0s linear .25s; }
 .bghud.is-on { opacity: 1; visibility: visible; transition: opacity .25s ease; }
+/* (합집합 S1) 색 · 글꼴 토큰 — bghud.js 의 VAL · CY · MID · DIM · PK 와 같은 값 */
+.bghud { --hud-val: #eaffff; --hud-cy: #4fe3ff; --hud-mid: #7fcfe6; --hud-dim: #5f7f96; --hud-pk: #ff6fb5; --hud-num: "Bahnschrift", "DIN Alternate", "DIN Condensed", "Roboto Condensed", "sans-serif-condensed", ui-monospace, Menlo, Consolas, monospace; }
 .bghud-sky, .bghud-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-/* 숫자 폭 고정 · 슬래시 0(레퍼런스 ref1 · ref4 공통) — 0 과 O 를 구별 */
-.bghud-svg text { font-family: var(--ufo-mono); font-variant-numeric: tabular-nums slashed-zero; }
+/* 숫자 폭 고정 · 슬래시 0(레퍼런스 ref1 · ref4 공통) — 0 과 O 를 구별. (합집합 S1) 글꼴은 장체 숫자 스택 */
+.bghud-svg text { font-family: var(--hud-num); font-variant-numeric: tabular-nums slashed-zero; font-feature-settings: "tnum" 1, "zero" 1; }
 .bghud-svg text.ko { font-family: "Noto Sans KR", system-ui, sans-serif; letter-spacing: 0; }   /* 한글 라벨 · 하늘 이름은 본문 글꼴(제안 B-2) */
+/* (합집합 S1) 글로우 — 현재값 약한 발광 · 진행 호 · 4단계 라벨(자간 .16em) · 방위 칸 채움(S11) */
+.bghud-svg .hud-v { filter: drop-shadow(0 0 2.5px rgba(79, 227, 255, .75)) drop-shadow(.8px .8px 0 rgba(4, 8, 24, .9)); }
+.bghud-svg .hud-arc { filter: drop-shadow(0 0 3px rgba(79, 227, 255, .9)); }
+.bghud-svg text.lab { letter-spacing: .16em; }
+/* (화면 확인 후) 밝은 하늘에서도 글자가 읽히게 어두운 외곽선 — 필터 대신 stroke. 셀 안 숫자 · 잔상은 제외 */
+.bghud-svg text { paint-order: stroke fill; stroke: rgba(4, 8, 24, .6); stroke-width: .7px; stroke-linejoin: round; }
+.bghud-svg text.nostroke { stroke: none; }
+.bghud-svg .hud-cell { fill: rgba(79, 227, 255, .92); filter: drop-shadow(0 0 4px rgba(79, 227, 255, .8)); }
 .bghud-probe { position: absolute; top: 0; left: 0; width: 0; height: env(safe-area-inset-top, 0px); visibility: hidden; }
 .bghud-card {
   position: absolute; left: 14px; right: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 136px); z-index: 1;
-  max-width: 420px; margin: 0 auto; display: grid; gap: 8px; pointer-events: none;
-  /* (제안 A-4 · 7) 홀로그램 글래스 카드 — 어두운 유리 + 챔퍼 모서리. 글자 대비를 위해 불투명도는 76% */
-  padding: 12px 14px; background: rgba(10, 8, 26, .76); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  max-width: 420px; margin: 0 auto; display: grid; gap: 0; pointer-events: none;
+  /* (제안 A-4 · 7) 홀로그램 글래스 카드 — 어두운 유리. 글자 대비를 위해 불투명도는 76%. (합집합 S21) 카드 안에만 12px 약한 격자 */
+  padding: 0 0 12px;
+  background: linear-gradient(rgba(79, 227, 255, .06) 1px, transparent 1px), linear-gradient(90deg, rgba(79, 227, 255, .06) 1px, transparent 1px), rgba(10, 8, 26, .76);
+  background-size: 12px 12px, 12px 12px, auto;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   font-variant-numeric: tabular-nums;
   opacity: 0; transform: translateY(10px); transition: opacity .22s ease, transform .22s ease;
   font-family: "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
@@ -382,23 +395,33 @@
 }
 .bghud-card::before { left: -4px; top: -4px; border-left-width: 1.5px; border-top-width: 1.5px; }
 .bghud-card::after { right: -4px; bottom: -4px; border-right-width: 1.5px; border-bottom-width: 1.5px; }
+/* (합집합 S19) 머리띠 — 높이 20 · 채운 띠 · 아래 선. 왼쪽 캡션 TARGET(4단계) · 오른쪽 칩 */
+.bghud-hd { height: 20px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px; background: rgba(79, 227, 255, .14); border-bottom: 1px solid rgba(79, 227, 255, .35); }
+.bghud-cap { font: 400 9px var(--hud-num); letter-spacing: .16em; color: var(--hud-mid); text-shadow: 0 0 3px rgba(4, 8, 24, .9); }
+.bghud-bd { display: grid; gap: 8px; padding: 10px 14px 0; }
+/* (합집합 S22) 우상 · 좌하 = 작은 십자(9 × 9, 굵기 1px, 카드 바깥 −4px) */
+.bghud-x { position: absolute; width: 9px; height: 9px; pointer-events: none; opacity: .7; background: linear-gradient(var(--hud-cy), var(--hud-cy)) center / 100% 1px no-repeat, linear-gradient(var(--hud-cy), var(--hud-cy)) center / 1px 100% no-repeat; }
+.bghud-x--tr { top: -4px; right: -4px; }
+.bghud-x--bl { bottom: -4px; left: -4px; }
 /* (레퍼런스 ref4 「v.1.32」 배지) NEW 는 솔리드 핑크 칩 */
 .bghud-card.is-new .bghud-k > span:not(.bghud-star) { color: #0a081a; background: var(--ufo-pink); padding: 1px 7px; line-height: 1.5; box-shadow: 0 0 10px rgba(255, 111, 181, .45); }
 .bghud-k { display: flex; align-items: center; gap: 6px; min-height: 12px; font: 500 9.5px var(--ufo-mono); letter-spacing: .14em; color: var(--ufo-pink); }
 .bghud-star { width: 12px; height: 12px; background: var(--ufo-pink); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); filter: drop-shadow(0 0 4px var(--ufo-pink)); }
 .bghud-star[hidden] { display: none; }
-.bghud-card h3 { margin: 0; font: 700 22px/1.1 "Noto Sans KR", system-ui, sans-serif; text-shadow: 0 0 14px rgba(79, 227, 255, .55), 0 1px 3px #000; }
-.bghud-to { margin: 0; font: 500 11px var(--ufo-mono); color: var(--ufo-cyan); letter-spacing: .04em; text-shadow: 0 1px 3px #000; }
+/* (합집합 S20) 대상명 22px · 700 · VAL + 얇은 글로우 · 종류 · 설명은 MID · DIM (글로우 없음) */
+.bghud-card h3 { margin: 0; font: 700 22px/1.1 "Noto Sans KR", system-ui, sans-serif; color: var(--hud-val); text-shadow: 0 0 10px rgba(79, 227, 255, .6), 1px 1px 0 rgba(4, 8, 24, .9); }
+.bghud-to { margin: 0; font: 500 12px/1.4 "Noto Sans KR", system-ui, sans-serif; letter-spacing: 0; color: var(--hud-mid); }
 .bghud-to[hidden] { display: none; }
 .bghud-btns { display: flex; gap: 8px; justify-content: flex-end; }
 /* (제안 A-4 · E-3) 작은 알약 버튼 — 손가락 목표 크기 44px 확보 */
+/* (합집합 S23) 얇은 테두리 직사각 버튼 — 확대 중(.is-fill)엔 면을 채운다 */
 .bghud-btn {
-  flex: 0 0 auto; min-height: 44px; padding: 10px 18px; border: 0; cursor: pointer; color: var(--ufo-ink); font: 600 12px var(--ufo-mono); letter-spacing: .08em;
-  background: rgba(255, 111, 181, .12); box-shadow: inset 0 0 0 1px var(--ufo-pink);
-  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  flex: 0 0 auto; min-height: 44px; padding: 10px 18px; border: 0; cursor: pointer; color: var(--hud-val); font-weight: 600; font-size: 12px; font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "sans-serif-condensed", "Noto Sans KR", system-ui, sans-serif; letter-spacing: .08em;
+  background: rgba(79, 227, 255, .08); box-shadow: inset 0 0 0 1px var(--hud-cy);
 }
+.bghud-btn.is-fill { background: var(--hud-cy); color: #06121c; }
 .bghud-btn:focus-visible { outline: 2px solid var(--ufo-cyan); outline-offset: 2px; }
-.bghud-hn { margin: 0; font-size: 10.5px; color: var(--ufo-sub); text-shadow: 0 1px 3px #000; }
+.bghud-hn { margin: 0; font-size: 10.5px; color: var(--hud-dim); }
 @media (prefers-reduced-motion: reduce) { .bghud, .bghud.is-on, .bghud-card { transition: none; } }
 
 /* ── (11-09 해금 3단계) 보상 — FULL NAV · 별빛 조명 칸 · 자유 항해 · 별빛 조명(화면 아래 멤버 5색) */
@@ -437,13 +460,22 @@
 @media (prefers-reduced-motion: reduce) { .ufo-guide { transition: none; } }
 
 /* ── (11-09) 시선 HUD 좌하단 맥박 신호 */
-.bghud-pulse { position: absolute; left: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); display: flex; align-items: center; gap: 8px; opacity: 0; transition: opacity .25s ease; --pc: #ff4a3a; }
+.bghud-pulse { position: absolute; left: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 28px); opacity: 0; transition: opacity .25s ease; --pc: #ff4a3a; }
 .bghud-pulse.is-on { opacity: 1; }
 .bghud-pulse__o { position: relative; width: 22px; height: 22px; }
 .bghud-pulse__o i, .bghud-pulse__o b { position: absolute; inset: 5px; border-radius: 50%; }
 .bghud-pulse__o i { background: var(--pc); box-shadow: 0 0 10px var(--pc); }
 .bghud-pulse__o b { border: 1.5px solid var(--pc); }
-.bghud-pulse > span { font: 600 9px "Noto Sans KR", system-ui, sans-serif; letter-spacing: .16em; color: var(--pc); text-shadow: 0 0 6px rgba(0, 0, 0, .6); }
+/* (합집합 S25 · S26 · S27) SIGNAL 라벨 · 각도 3자리 · 분절 막대 5개 · 미니 파형 */
+.bghud-sig__l { font: 400 9px var(--hud-num); letter-spacing: .16em; color: var(--hud-mid); text-shadow: 0 0 3px rgba(4, 8, 24, .9); }
+.bghud-sig__v { font: 700 12px var(--hud-num); letter-spacing: .04em; color: var(--hud-val); font-variant-numeric: tabular-nums slashed-zero; }
+.bghud-sig__bars { display: flex; gap: 2px; }
+.bghud-sig__bars i { display: block; width: 3px; height: 10px; background: rgba(127, 207, 230, .22); }
+.bghud-sig__bars i.on { background: var(--pc); }
+.bghud-sig__wave { flex: 0 0 auto; width: 52px; height: 16px; overflow: visible; }
+.bghud-sig__wave line { stroke: var(--hud-dim); stroke-width: .6; }
+.bghud-sig__wave polyline { stroke: var(--pc); stroke-width: 1.2; }
+@media (max-width: 340px) { .bghud-sig__wave { display: none; } }
 
 /* ── (11-09) 가끔 나타나는 YMMT 별자리 · UFO 캔버스(js/bgfx.js) */
 .bgfx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 971; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .25s ease, visibility 0s linear .25s; }
