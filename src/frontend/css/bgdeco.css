@@ -252,6 +252,23 @@ html:has(#bgdeco[data-variant="d"]) .tt__legend { color: var(--color-text); }
 
 /* (bg-dome 시험) 배경 보기 팝업 — 밝게/어둡게 버튼을 길게 누르면 버튼 아래에 뜬다. 동작은 js/bgview.js */
 .ntc__theme { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.ntc__theme { position: relative; overflow: hidden; }
+.ntc__theme svg { position: relative; z-index: 1; }
+/* (bg-dome 11-10 운영자) 길게 누르면 배경 테마 팝업이 있다는 안내 — 한 번 반짝(::after) → 한 번 차오름(::before). 테마를 한 번이라도 바꾸면 다시 안 뜬다(bgview.js) */
+.ntc__theme::before { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(255, 119, 136, .55), rgba(115, 200, 242, .45)); transform: scaleY(0); transform-origin: 50% 100%; pointer-events: none; }
+.ntc__theme::after { content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .75), transparent); transform: skewX(-18deg); opacity: 0; pointer-events: none; }
+:root[data-theme="light"] .ntc__theme::after { background: linear-gradient(100deg, transparent, rgba(255, 119, 136, .6), rgba(115, 200, 242, .6), transparent); }   /* 밝은 화면은 버튼이 희어 흰 빛줄기가 안 보인다 → 분홍 · 파랑 빛줄기 */
+.ntc__theme.is-hint::after { animation: bgv-hint-glint .7s ease-out 1; }
+.ntc__theme.is-hint::before { animation: bgv-hint-fill 1.5s cubic-bezier(.3, 0, .2, 1) .75s 1 both; }
+.ntc__theme.is-holding::before { transform: scaleY(1); transition: transform .5s linear; }
+@keyframes bgv-hint-glint { 0% { left: -60%; opacity: 0; } 20% { opacity: 1; } 100% { left: 120%; opacity: 0; } }
+@keyframes bgv-hint-fill { 0% { transform: scaleY(0); opacity: 1; } 62% { transform: scaleY(1); opacity: 1; } 100% { transform: scaleY(1); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .ntc__theme.is-hint::after { animation: none; }
+  .ntc__theme.is-hint::before { animation: bgv-hint-fade 1.6s ease 1 both; transform: scaleY(1); }
+  .ntc__theme.is-holding::before { transition: none; }
+}
+@keyframes bgv-hint-fade { 0%, 100% { opacity: 0; } 30%, 70% { opacity: .8; } }
 .bgvw {
   position: fixed;
   z-index: 975;

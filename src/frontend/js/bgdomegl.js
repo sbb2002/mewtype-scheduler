@@ -1951,7 +1951,7 @@ export function createDomeGL(host, isPaused) {
       img.decoding = "async";
       img.onload = () => {
         if (gl.isContextLost()) return;
-        gl.activeTexture(gl.TEXTURE9);   // Temporary upload unit; preserve ground/albedo units 5..8.
+        gl.activeTexture(gl.TEXTURE9);   // Temporary upload unit; preserve ground/albedo units 5..8. (끝나면 화면 사진으로 되돌린다)
         gl.bindTexture(gl.TEXTURE_2D, tex);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
         gl.generateMipmap(gl.TEXTURE_2D);   // 천정 · 지평선 평균색(작은 단계)용. 본 샘플은 0단계만 써서 경도 이음매에 줄이 안 생긴다
@@ -1959,6 +1959,8 @@ export function createDomeGL(host, isPaused) {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, themeFrame);   // 9번 칸은 화면 사진(밝게/어둡게 · 하늘 전환) 자리 — 임시로 쓴 뒤 되돌린다(없으면 null). 안 되돌리면 전환 중 남은 화면이 구름 그림으로 바뀐다(11-10 「지구로 갈 때 바닥이 사라짐」)
+        gl.activeTexture(gl.TEXTURE0);
         const err = gl.getError();
         if (err || DEBUG) console.warn(`[bgdome] 하늘 이미지 ${rel} ${img.naturalWidth}x${img.naturalHeight} glError=${err}`);
         if (--set.left === 0) {

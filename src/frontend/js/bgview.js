@@ -50,6 +50,8 @@ const currentTheme = () => (birthdayOn() ? "birthday" : bgTheme());
 
 function chooseTheme(value) {
   if (value === currentTheme()) return;
+  markHintDone();   // 실제로 테마를 바꿨으니 길게 누르기 안내는 다시 뜨지 않는다(팝업만 열고 닫은 것은 여기 오지 않는다)
+  stopHint();       // 재생 중인 안내가 있으면 바로 멈춘다
   wipeDown(() => {
     if (value === "birthday") { setBirthdayOn(true); return; }
     if (birthdayOn()) setBirthdayOn(false);
@@ -69,6 +71,41 @@ function wipeDown(change) {
   const vt = document.startViewTransition(change);
   const done = () => root.classList.remove("bg-wipe");
   vt.finished.then(done, done);
+}
+
+// (11-10 운영자) 테마 버튼 길게 누르기 안내 — 첫 화면에서 버튼이 한 번 반짝이고 한 번 차올라 「누르고 있으면 더 있다」를 알린다.
+// 언제 뜨나: 기억 키 "bgtheme-hint" 가 "1" 이 아닐 때, 페이지 로드마다 한 번만(HINT_DELAY_MS 뒤 — 폰 첫 방문 플릭 안내와 겹치지 않게).
+//   자리가 안 잡혀 있으면(버튼 안 보임 · 탭 숨김 · 다른 안내 중 · 팝업 열림) 800ms 뒤 다시 보고, 10번 안에 안 되면 포기한다.
+// 언제 끝나나: 배경 테마를 실제로 바꿀 때(chooseTheme) — 키를 "1" 로 남겨 다시 안 뜬다. 팝업만 열고 닫으면 끝이 아니다.
+//   재생 중 버튼을 누르면 바로 멈춘다. 키를 저장 못 하는 환경이면 들어올 때마다 뜬다.
+const HINT_KEY = "bgtheme-hint";
+const HINT_DELAY_MS = 2600, HINT_MS = 2400, HINT_RETRY_MS = 800, HINT_MAX_TRY = 10;
+let hintBtn = null, hintTimer = 0, hintTries = 0;
+
+function hintDone() {
+  try { return localStorage.getItem(HINT_KEY) === "1"; } catch { return false; }
+}
+function markHintDone() {
+  try { localStorage.setItem(HINT_KEY, "1"); } catch { /* 저장 못 함 — 다음 방문에 다시 뜬다 */ }
+}
+/** 재생 중인 안내를 바로 멈춘다(클래스 제거 · 예약 취소) */
+function stopHint() {
+  clearTimeout(hintTimer);
+  hintTimer = 0;
+  hintBtn?.classList.remove("is-hint");
+}
+/** 자리가 잡혔으면 안내를 켜고, 아니면 잠시 뒤 다시 본다 */
+function tryHint() {
+  hintTimer = 0;
+  const html = document.documentElement;
+  const blocked = hintDone() || !hintBtn.isConnected || hintBtn.offsetWidth === 0 || document.hidden
+    || html.classList.contains("bg-peek") || html.hasAttribute("data-bday-full") || (pop && !pop.hidden);
+  if (blocked) {
+    if (++hintTries < HINT_MAX_TRY) hintTimer = setTimeout(tryHint, HINT_RETRY_MS);
+    return;
+  }
+  hintBtn.classList.add("is-hint");
+  hintTimer = setTimeout(() => { hintBtn.classList.remove("is-hint"); hintTimer = 0; }, HINT_MS);
 }
 
 let pop = null, press = null, eatClick = false, toastEl = null, toastT = 0, busy = false;
@@ -224,18 +261,23 @@ function cancelPress() {
   if (!press) return;
   clearTimeout(press.t);
   press = null;
+  themeButton().classList.remove("is-holding");   // 길게 누르는 중 「차오름」 취소
 }
 
 export function initBgView() {
   const btn = themeButton();   // 늘 같은 요소 — 소식 막대가 다시 그려져도 리스너가 유지된다
+  hintBtn = btn;
   btn.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
+    stopHint();   // 안내 중에 누르면 안내는 거둔다(사용자 조작이 우선)
     cancelPress();
     eatClick = false;
     const q = press = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    btn.classList.add("is-holding");   // 실제 길게 누르기도 안내와 같은 「차오름」으로 보여 준다
     q.t = setTimeout(() => {
       if (press !== q) return;
       press = null;
+      btn.classList.remove("is-holding");
       eatClick = true;   // 손을 뗄 때 오는 click 은 테마 전환으로 치지 않는다
       open();
     }, HOLD_MS);
@@ -260,4 +302,6 @@ export function initBgView() {
   window.addEventListener("resize", close);
   restore();
   window.addEventListener("scroll", close, { passive: true, capture: true });
+  // (11-10 운영자) 첫 화면 안내 — 페이지가 자리 잡은 뒤 한 번만(조건은 tryHint · 위 주석)
+  hintTimer = setTimeout(tryHint, HINT_DELAY_MS);
 }
