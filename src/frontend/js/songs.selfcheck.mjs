@@ -3,7 +3,7 @@
  * node songs.selfcheck.mjs 로 실행. 프레임워크 없음.
  */
 import { readFileSync } from "node:fs";
-import { isNewSong, hasNewSong, displayKo, kanaToHangul, normalize, prepareSong, matches, viewSongs, matchRange, kstDate, daysBetween, omakaseOrder, mediaCandidates, hasMv } from "./songs.js";
+import { isNewSong, hasNewSong, displayKo, kanaToHangul, normalize, prepareSong, matches, viewSongs, matchRange, kstDate, daysBetween, omakaseOrder, mediaCandidates, hasMv, disambiguateTitles } from "./songs.js";
 
 let n = 0;
 function assert(cond, msg) {
@@ -158,5 +158,17 @@ const multi = prepareSong({ id: "FFFFFFFFFFF", title: "t", alt: ["GGGGGGGGGGG"],
 const firsts = new Set();
 for (let k = 0; k < 200; k++) firsts.add(mediaCandidates(multi, "mv", Math.random)[0]);
 assert(firsts.size === 2 && !firsts.has("GGGGGGGGGGG"), "MV 가 여럿이면 매번 무작위로 첫 후보를 고른다 (음원은 MV 뒤)");
+
+// ── 같은 제목 구분 (v4.11.12) ──
+const dt = disambiguateTitles([
+  { id: "a", title: "唱", date: "2024-04-05" }, { id: "b", title: "唱", date: "2026-09-16" },
+  { id: "c", title: "ELECT", date: "2025-11-14" }, { id: "d", title: "X", date: "2026-01-01" }, { id: "e", title: "X", date: "2026-05-05" },
+]);
+assert(dt[0].title === "唱(2024)" && dt[1].title === "唱(2026)", "같은 제목 → 제목(연도)");
+assert(dt[2].title === "ELECT", "하나뿐인 제목은 그대로");
+assert(dt[3].title === "X(2026-01-01)" && dt[4].title === "X(2026-05-05)", "같은 연도까지 겹치면 발매일 전체");
+const src = [{ id: "a", title: "唱", date: "2024-04-05" }, { id: "b", title: "唱", date: "2026-09-16" }];
+disambiguateTitles(src);
+assert(src[0].title === "唱", "원본 배열 · 객체는 바꾸지 않는다");
 
 console.log(`\n${n}개 통과`);

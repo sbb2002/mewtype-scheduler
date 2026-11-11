@@ -18,7 +18,7 @@
 import { fetchPreview } from "./api.js";
 import { setMainMusicActive, setMainMusicHandOff } from './musicpriority.js';
 import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS } from "./config.js";
-import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange, kstDate, omakaseOrder, mediaCandidates, hasMv } from "./songs.js";
+import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange, kstDate, omakaseOrder, mediaCandidates, hasMv, disambiguateTitles } from "./songs.js";
 import { wireSheetDrag } from "./sheetdrag.js";   // (마이크로 인터랙션) 모바일 시트 끌어 내리기
 
 const FLOAT_W = 356;                      // 플로팅 프레임 너비(16:9 에서 높이 200 이 되는 값)
@@ -218,7 +218,7 @@ function loadSongs() {
     if (!valid(r)) { st.loadError = true; loadPromise = null; return; }
     st.loadError = false;
     st.raw = r.data.songs;
-    st.songs = st.raw.map((s) => prepareSong(s));
+    st.songs = disambiguateTitles(st.raw.map((s) => prepareSong(s)));   // (v4.11.12) 같은 제목은 「제목(연도)」
   });
   return loadPromise;
 }
@@ -242,6 +242,9 @@ function memberList(s) {
   const keys = Array.isArray(s.singers) && s.singers.length ? s.singers : [s.who];
   return keys.map((k) => memberOf(k)).filter(Boolean);
 }
+/** (v4.11.12) 부른 멤버가 그룹뿐인 곡인가 — 곡 찾기 세부정보 · 다음 곡 줄 · 모바일 재생 바에서 그룹명을 빼는 기준. */
+const groupOnly = (s) => (s.singers && s.singers.length ? s.singers : [s.who]).every((k) => k === "group");
+
 /** 재생부 메타용 노드 — 점(멤버마다 하나) + 이름「아라레, 리츠」 + 「 · 」(종류 · 날짜와 잇기). 멤버가 없으면 빈 배열. */
 function memberNodes(s) {
   const ms = memberList(s);
@@ -960,7 +963,8 @@ function paintStage() {
   const s = curSong();
   el.sTitle.replaceChildren(s ? s.title : "곡을 고르세요", ...(s && isNewSong(s) ? [" ", newPill()] : []));
   el.sMeta.replaceChildren();
-  el.sMeta.classList.toggle("is-original", !!s && s.kind === "original");
+  // (v4.11.12) 오리지널 · 그룹 명의 곡(부른 멤버가 그룹뿐)은 모바일 재생 바에서 밴드명을 숨긴다(CSS). 개인 · 유닛 커버(아라레, 리츠 등)는 그대로
+  el.sMeta.classList.toggle("no-who", !!s && (s.kind === "original" || groupOnly(s)));
   el.sKo.textContent = s ? displayKo(s) : "";
   if (s) {
     // (핫픽스) 멤버 부분을 감싸 둔다 — 모바일 재생 바에서 오리지널이면 CSS 가 숨긴다(오리지널은 전부 그룹 명의라 이름이 길어 줄이 꺾였다)
@@ -1153,7 +1157,7 @@ function paintNext() {
         return h("button", { type: "button", class: cls, "aria-label": `${s.title} 재생`, on: { click: () => playQueueAt(row.i) } },
           h("span", { class: "mp-next__lab", text: row.label || (first ? "다음" : String(row.i + 1)) }),
           h("span", { class: "mp-next__t", text: s.title }),
-          first ? h("span", { class: "mp-next__m" }, ...memberNodes(s), KIND_LABEL[s.kind] || s.kind) : null);
+          first ? h("span", { class: "mp-next__m" }, ...(groupOnly(s) ? [] : memberNodes(s)), KIND_LABEL[s.kind] || s.kind) : null);
       }
       if (row.kind === "mystery") {
         return h("div", { class: cls + " is-mystery" },
@@ -1291,14 +1295,15 @@ function newPill() {
 function songRow(s, i, q) {
   const cur = s.id === st.curId;
   const ms = memberList(s);
+  // (v4.11.12) 세부정보 = 열 맞춤 — 발매일 | 종류 | MV | 멤버(그룹뿐인 곡은 멤버 칸을 비워 둔다). 날짜는 늘 YYYY-MM-DD.
+  // MV · 멤버 칸은 비어도 자리를 남긴다 — 빠지면 뒤 칸(PC 재생목록 번호)이 앞 열로 밀린다
   const sub = h("span", { class: "mp-item__sub" },
-    ...ms.map((m) => h("span", { class: "mp-dot", style: `--mc:${m.color}` })),
-    ms.length ? h("span", { class: "mp-pc-only", text: ms.map((m) => m.name).join(", ") }) : null,
-    ms.length ? h("span", { class: "mp-m-only", text: ms.map((m) => m.short || m.name).join(", ") }) : null,
-    h("span", { text: KIND_LABEL[s.kind] || s.kind }),
-    h("span", { class: "mp-mono mp-pc-only", text: s.date }),
-    h("span", { class: "mp-mono mp-m-only", text: s.date.slice(2, 7).replace("-", ".") }),   // (v4.11.6) 모바일은 한 줄에 넣으려고 26.09 로
-    hasMv(s) ? h("span", { class: "mp-mvtag", text: "MV" }) : null,   // (v4.8.3) MV 가 있는 곡 표시 — 재생목록 줄에는 안 붙인다
+    h("span", { class: "mp-c mp-c--date mp-mono", text: s.date }),
+    h("span", { class: "mp-c mp-c--kind", text: KIND_LABEL[s.kind] || s.kind }),
+    h("span", { class: "mp-c mp-c--mv" }, hasMv(s) ? h("span", { class: "mp-mvtag", text: "MV" }) : null),   // (v4.8.3) MV 가 있는 곡 표시 — 재생목록 줄에는 안 붙인다
+    h("span", { class: "mp-c mp-c--who" }, ...(groupOnly(s) ? [] : [
+      ...ms.map((m) => h("span", { class: "mp-dot", style: `--mc:${m.color}` })),
+      h("span", { class: "mp-c__name", text: ms.map((m) => m.name).join(", ") })])),
   );
   const qns = st.queue.flatMap((x, k) => (x === s.id ? [k + 1] : []));   // 재생목록에서의 번호들(같은 곡이 여러 번일 수 있다)
   if (qns.length) {   // 글자 수 상한: 1번이면 「N번」, 여럿이면 「N번 외 K」(N = 가장 앞 번호). 전체 번호는 툴팁 · 접근성 이름으로만

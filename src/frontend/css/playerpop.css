@@ -447,7 +447,10 @@ html.mp-lock { overflow: hidden; }
 .mp-item__n { text-align: right; font-size: 1.15rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--color-text-muted); }
 .mp-item__body { display: block; min-width: 0; }
 .mp-item__title { display: block; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
-.mp-item__sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 2px; font-size: 0.7rem; color: var(--color-text-muted); }
+.mp-item__sub { display: grid; grid-template-columns: 10.5ch 4.6em 2.4em minmax(0, 1fr) auto; align-items: center; column-gap: 8px; margin-top: 2px; font-size: 0.7rem; color: var(--color-text-muted); }   /* (v4.11.12) 열 맞춤: 발매일 | 종류 | MV | 멤버 | 재생목록 번호(PC) */
+.mp-c { min-width: 0; white-space: nowrap; }
+.mp-c--who { display: flex; align-items: center; gap: 4px; overflow: hidden; }
+.mp-c__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .mp-item__ko { display: block; margin-top: 1px; font-size: 0.7rem; color: var(--color-text-muted); }
 .mp-item__sub em { font-style: normal; }
 /* (v4.8.3) MV 가 있는 곡 표시 — 곡 목록 줄의 날짜 뒤(재생목록 줄에는 안 붙인다) */
@@ -456,6 +459,7 @@ html.mp-lock { overflow: hidden; }
   color: var(--mp-accent); font-size: 0.6rem; font-weight: 700; line-height: 1.5;
 }
 .mp-item__sub .mp-dot { margin-right: -4px; }
+.mp-c--who .mp-dot { margin-right: 0; }   /* (v4.11.12) 점이 이름에 겹치지 않게 — 위 음수 여백을 이긴다 */
 .mp-item mark { border-radius: 2px; background: color-mix(in srgb, var(--mp-accent) 35%, transparent); color: inherit; }
 .mp-empty { padding: 28px 12px; text-align: center; color: var(--color-text-muted); }
 .mp-link { text-decoration: underline; color: var(--mp-accent); }
@@ -655,7 +659,7 @@ html.mp-lock { overflow: hidden; }
   .mp-next__t.is-marquee { text-overflow: clip; }
   .mp-next__mq { display: inline-flex; animation: mp-mq var(--mq-dur, 10s) linear infinite; }
   .mp-next__mqi { flex: none; padding-right: 2.5em; }
-  .mp-song__meta.is-original .mp-song__who { display: none; }   /* (핫픽스) 재생 바: 오리지널은 밴드명 없이 「오리지널 · 날짜」 */
+  .mp-song__meta.no-who .mp-song__who { display: none; }   /* (v4.11.12) 재생 바: 오리지널 · 그룹 명의 곡은 밴드명 없이 「종류 · 날짜」 */
   .mp-song__ko { display: none; }   /* (핫픽스) 재생 바: 한글 독음은 숨긴다(PC 재생부는 그대로) */
   /* 곡 찾기 탭: 검색 · 필터 줄은 위에 붙고 곡 줄만 지나간다 */
   .mp-lib { height: auto; overflow-y: auto; overscroll-behavior: contain; }
@@ -673,13 +677,11 @@ html.mp-lock { overflow: hidden; }
   /* 곡 줄 50px 두 줄: 곡명 / 독음 · 멤버 · 종류 · 날짜 · MV */
   .mp-item__main { position: relative; grid-template-columns: 22px minmax(0, 1fr); height: 48px; padding: 0 6px; }
   .mp-item__n { font-size: 0.75rem; font-weight: 400; }
-  .mp-item__body { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 6px; align-items: center; }
-  .mp-item__title { grid-column: 1 / -1; overflow: hidden; font-size: 0.875rem; text-overflow: ellipsis; white-space: nowrap; }
-  .mp-item__ko { grid-row: 2; grid-column: 1; max-width: 11rem; margin: 0; overflow: hidden; font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
-  .mp-item__sub { grid-row: 2; grid-column: 2; flex-wrap: nowrap; gap: 6px; min-width: 0; margin: 0; overflow: hidden; font-size: 0.72rem; white-space: nowrap; }
-  .mp-item__sub:last-child { grid-column: 1 / -1; }   /* 독음이 없는 곡 */
-  .mp-item__sub > * { flex: none; }
-  .mp-item__sub .mp-dot { margin-right: 0; }
+  /* (v4.11.12) 모바일 곡 줄: 1줄 = 제목 + 독음(작고 흐리게, 제목이 길면 독음부터 줄어 말줄임) · 2줄 = 세부정보 열 */
+  .mp-item__body { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; min-width: 0; }
+  .mp-item__title { order: 1; flex: 0 1 auto; min-width: 0; overflow: hidden; font-size: 0.875rem; text-overflow: ellipsis; white-space: nowrap; }
+  .mp-item__ko { order: 2; flex: 0 1000 auto; min-width: 0; overflow: hidden; font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+  .mp-item__sub { order: 3; flex: 1 0 100%; margin: 0; font-size: 0.72rem; }
   .mp-item.has-q .mp-item__main { padding-right: 52px; }
   .mp-item .mp-q-badge { position: absolute; top: 50%; right: 8px; translate: 0 -50%; }
   /* 검색 모드: 키보드가 올라와도 결과가 보이게 탭 · 칩을 접고 「취소」를 띄운다(js/player.js enterSearch). --mp-kb = 키보드가 가린 높이 */
