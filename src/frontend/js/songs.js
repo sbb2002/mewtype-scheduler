@@ -98,6 +98,21 @@ export function prepareSong(raw, aliases = []) {
   };
 }
 
+/** (v4.11.12) 제목이 같은 곡이 여럿이면 표시 제목 뒤에 발매 연도를 붙인다 — 「唱(2024)」 · 「唱(2026)」. 데이터는 그대로, 새 객체를 돌려준다.
+ *  같은 제목 · 같은 연도가 또 겹치면 연도 대신 발매일 전체(「唱(2026-09-16)」). 날짜가 없으면 그대로 둔다. */
+export function disambiguateTitles(songs) {
+  const byTitle = new Map();
+  for (const s of songs) byTitle.set(s.title, (byTitle.get(s.title) || 0) + 1);
+  const yearCount = new Map();
+  for (const s of songs) if (byTitle.get(s.title) > 1 && s.date) { const k = `${s.title}\u0000${String(s.date).slice(0, 4)}`; yearCount.set(k, (yearCount.get(k) || 0) + 1); }
+  return songs.map((s) => {
+    if (byTitle.get(s.title) < 2 || !s.date) return s;
+    const y = String(s.date).slice(0, 4);
+    const tag = yearCount.get(`${s.title}\u0000${y}`) > 1 ? String(s.date) : y;
+    return { ...s, title: `${s.title}(${tag})` };
+  });
+}
+
 /** 재생 후보 영상 ID 를 시도 순서대로(v4.8.3). 음원 = 대표 id + alt 를 무작위로 섞은 순서. MV 모드 = MV 를 섞은 뒤 음원(폴백).
  *  중복은 한 번만. 곡 객체의 배열은 건드리지 않는다. rand 는 [0,1) 난수(테스트용으로 바꿔 끼운다). */
 export function mediaCandidates(song, mode, rand = Math.random) {
