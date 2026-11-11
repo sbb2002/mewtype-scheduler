@@ -74,10 +74,10 @@ let INDOOR_BG = (() => { const q = DEBUG ? QS.get("bgindoor") : null; return q =
 // 확인용(?bgdebug): bgstar = 우주에 들어가면 항상 성간 이동 · bgjump=A|B|C = 워프 점프 연출 고정 · bgstarrate=<0~1> = 자동 시작 확률.
 const STAR_RATE = (() => { const v = DEBUG ? Number(QS.get("bgstarrate")) : NaN; return DEBUG && QS.has("bgstar") ? 1 : Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0; })();   // (11-09 운영자) 진입 10% 자동 시작은 끔 — 성간 이동은 해금 뒤 길게 누르기로만
 const JUMP_FIXED = DEBUG && ["A", "B", "C"].includes(QS.get("bgjump")) ? QS.get("bgjump") : null;
-// (11-05 2차, 비교용) 우주 바탕: map = NASA SVS Deep Star Maps 2020(가) · eso = ESO/S. Brunier 은하수 파노라마(대안) · shader = 그려 만든 우주(나).
-// 우주 사진 = assets/bg/space/(출처 · 이용 조건 = assets/bg/README.md). ?bgdebug&bgspace=map|eso|shader. (11-09 해금) 기본 우주엔 큰 사진이 없고, 딥필드 · 달 궤도는 워프로 가서 본다(bgunlock.js)
-// (11-05 운영자) 가 · 나 · 대안 모두 쓴다 — 방문마다 셋 중 하나(같은 확률).
-const SPACE_MODE = (() => { const q = DEBUG ? QS.get("bgspace") : null; return ["map", "eso", "shader"].includes(q) ? q : ["map", "eso", "shader"][Math.floor(Math.random() * 3)]; })();
+// (11-05 2차, 비교용) 우주 바탕: map = NASA SVS Deep Star Maps 2020(가) · tycho = NASA SVS Tycho Catalog Skymap v2.0 t5(대안, 11-11 ESO 은하수 대신 — CC BY 출처 표시 부담) · edr3 = Kevinmloch 의 Gaia EDR3 은하수 렌더링(11-11, CC BY-SA 4.0) · wise = NASA/JPL WISE 적외선 전천 PIA15482(11-11) · shader = 그려 만든 우주(나).
+// 우주 사진 = assets/bg/space/(출처 · 이용 조건 = assets/bg/README.md). ?bgdebug&bgspace=map|tycho|edr3|wise|shader. (11-09 해금) 기본 우주엔 큰 사진이 없고, 딥필드 · 달 궤도는 워프로 가서 본다(bgunlock.js)
+// (11-05 운영자) 가 · 나 · 대안 모두 쓴다 — 방문마다 다섯 중 하나(같은 확률, 11-11 edr3 · wise 추가).
+const SPACE_MODE = (() => { const q = DEBUG ? QS.get("bgspace") : null; return ["map", "tycho", "edr3", "wise", "shader"].includes(q) ? q : ["map", "tycho", "edr3", "wise", "shader"][Math.floor(Math.random() * 5)]; })();
 const T_SPEED = (() => { const v = DEBUG && !NORMAL && QS.get("bgspeed") != null ? Number(QS.get("bgspeed")) : NaN; return Number.isFinite(v) && v >= 0 ? v : 1; })();
 // 확인용(?bgdebug 와 함께): bgmoon = 달 위상 0 ~ 1(0 삭 · 0.25 상현 · 0.5 망 · 0.75 하현) — 달을 정남 고도 35° 에 두고 그 위상으로 비춘다(실제 해 위치는 그대로)
 // 달 기본 = CSS reference pixel 기준 육안 크기 × 배율(11-05). 해는 기존 투영 그대로.
@@ -343,7 +343,7 @@ float moonDisc(vec3 t, float facing, float pxAng) {
 uniform vec4 uSpace; uniform vec3 uWarpDir;
 // (11-06 운영자) 지나가는 별 궤적 수 = 속도에 따라(기어 N 0 · 1단 6 · 2단 12 · 3단 18 · 4단 26 · 5단 36, 사이는 이어서). 소수 부분 = 막 나타나는 줄의 밝기
 uniform float uTrailN;
-// (11-05 2차) 우주 배경 비교용: uSpaceTex = (하늘 지도 켬, 딥필드 켬, 지도 종류 1 = NASA 별 지도 · 2 = ESO 은하수, 지도 노출).
+// (11-05 2차) 우주 배경 비교용: uSpaceTex = (하늘 지도 켬, 딥필드 켬, 지도 종류 1 = NASA 별 지도 · 2 = Tycho 별 지도 · 3 = Gaia EDR3 렌더링 · 4 = WISE, 지도 노출).
 // 지도는 등장방형(equirect) — 13번 칸, 딥필드 사진 — 14번 칸(실내에서는 지형 확대 조각 칸이 비어 있다).
 uniform sampler2D uSpaceMap, uSpaceDeep; uniform vec4 uSpaceTex; uniform vec2 uSpaceMapSize;
 // (11-06) uSpaceRot = 우주 바탕(지도 · 별 · 은하 · 사진) 방향 — 성간 이동으로 달린 만큼 돌고, 워프 점프면 무작위로. uDeepShape = 큰 사진의 (가로 ÷ 세로, 가로 픽셀)
@@ -1349,7 +1349,7 @@ export function createDomeGL(host, isPaused) {
       img.onerror = () => { one(); console.warn("[bgdome] 우주 사진을 못 받음", name); };
       img.src = new URL("../assets/bg/space/" + name, import.meta.url).href;
     };
-    if (SPACE_MODE !== "shader") load(SPACE_MODE === "eso" ? "space-eso.webp" : "space-starmap.webp", "map", 13);
+    if (SPACE_MODE !== "shader") load(SPACE_MODE === "tycho" ? "space-tycho.webp" : SPACE_MODE === "edr3" ? "space-edr3.webp" : SPACE_MODE === "wise" ? "space-wise.webp" : "space-starmap.webp", "map", 13);
     return spaceTex.ready;
   }   // 실내 우주 배경의 워프 시작 · 적분 거리
 
@@ -1393,8 +1393,11 @@ export function createDomeGL(host, isPaused) {
   // 우주 바탕의 방향(돌림 행렬, 열 우선 3×3 — uSpaceRot). (11-06 운영자 「N 이나 워프 뒤 늘 같은 풍경은 어색」)
   //   성간 이동 중엔 여행마다 무작위로 고른 축을 중심으로 달린 거리만큼 조금씩 돌아(전속력 약 2.5°/초) 멈춘 곳의 하늘이 매번 달라지고,
   //   워프 점프는 순간 이동이라 도착 순간 완전히 무작위 방향 + 다른 사진으로 바뀐다.
-  let spaceRot = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   const randUnit = () => { const z = Math.random() * 2 - 1, a = Math.random() * 2 * Math.PI, r = Math.sqrt(1 - z * z); return [r * Math.cos(a), z, r * Math.sin(a)]; };
+  // (운영자 11-11) 우주에 들어갈 때마다(첫 화면 포함) 바탕도 무작위 방향 — 전엔 첫 진입은 늘 회전 없음, 워프 · 성간 이동 뒤에만 무작위였다.
+  //   딥필드 · 달 궤도 사진은 이 뒤에 placePhoto 가 시선 닿는 곳으로 다시 맞춘다(applyPlace 보다 먼저 부를 것).
+  const randomSpaceRot = () => axisRot(randUnit(), Math.random() * 2 * Math.PI);
+  let spaceRot = randomSpaceRot();
   // (11-06 운영자 「성간 이동이 늘 같은 방향」) 진행 방향(uWarpDir)도 여행마다 무작위 — 방위 0~360° 아무 데나, 고도 3°~45°
   //   (바닥 아래로 가면 빛이 몰리는 앞쪽 · 점프 중심이 바닥에 가려지므로 위 반구, 머리 꼭대기 근처는 피함). 전엔 늘 돔 정면 지평선(고도 ≈ 2.9°).
   const WARP_DIR0 = [0, 0.05, 0.99875];
@@ -1597,7 +1600,7 @@ export function createDomeGL(host, isPaused) {
     if (!outdoor) beginSky(v);   // 바꾸기 전 화면을 찍는다(배경 보기 중일 때만)
     INDOOR_BG = v;
     warpDist = 0;
-    if (v === "space") { if (pendingPlace) applyPlace(); else setDeep(-1); }   // (11-09 해금) 패널로 들어오는 초행성X = 늘 사진 없는 기본 우주. 딥필드 · 달 궤도는 워프 · 자유 항해로만
+    if (v === "space") { spaceRot = randomSpaceRot(); if (pendingPlace) applyPlace(); else setDeep(-1); }   // (11-09 해금) 패널로 들어오는 초행성X = 늘 사진 없는 기본 우주. 딥필드 · 달 궤도는 워프 · 자유 항해로만
     if (outdoor) { /* 바깥 보기 중 실내 값만 바뀜 — 실내로 돌아올 때 판정 */ }
     else if (v === "space") spaceEntered(); else endStar("fade");
     draw();
@@ -2344,7 +2347,7 @@ export function createDomeGL(host, isPaused) {
       gl.uniform4f(U.uSpace, 1, beta, warpDist, gb);
       gl.uniform1f(U.uTrailN, trailCount(beta));
       loadSpaceTex();
-      gl.uniform4f(U.uSpaceTex, spaceTex.map ? 1 : 0, spaceTex.deep ? 1 : 0, SPACE_MODE === "eso" ? 2 : 1, SPACE_MODE === "eso" ? 1.8 : 1.5);
+      gl.uniform4f(U.uSpaceTex, spaceTex.map ? 1 : 0, spaceTex.deep ? 1 : 0, SPACE_MODE === "tycho" ? 2 : SPACE_MODE === "edr3" ? 3 : SPACE_MODE === "wise" ? 4 : 1, 1.5);
       gl.uniform2f(U.uSpaceMapSize, spaceTex.mapW, spaceTex.mapW / 2);
       gl.uniform3f(U.uWarpDir, ...warpDir());
       gl.uniformMatrix3fv(U.uSpaceRot, false, new Float32Array(spaceRot));
@@ -2670,7 +2673,7 @@ export function createDomeGL(host, isPaused) {
     const changed = next !== outdoor;
     if (changed) beginSky(next ? "earth" : INDOOR_BG);   // 바꾸기 전 화면을 찍는다(배경 보기 중일 때만)
     outdoor = next;
-    if (changed) { if (next) endStar("fade"); else if (INDOOR_BG === "space") { if (pendingPlace) applyPlace(); spaceEntered(); } }   // 지구로 나가면 성간 이동 끝 · 우주로 돌아오면 진입 판정
+    if (changed) { if (next) endStar("fade"); else if (INDOOR_BG === "space") { spaceRot = randomSpaceRot(); if (pendingPlace) applyPlace(); spaceEntered(); } }   // 지구로 나가면 성간 이동 끝 · 우주로 돌아오면 진입 판정
     useViewProgram();
     // 시선 · 기준점은 두 보기가 같다(updateView) — 여기서는 화면 폭 각도만(시안 bgsize=window 일 때만 바깥이 다르다)
     if (W) gl.uniform1f(U.uF, viewFocal());
