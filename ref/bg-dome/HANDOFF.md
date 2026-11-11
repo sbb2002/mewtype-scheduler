@@ -1,8 +1,42 @@
-# 배경 「UFO 돔」 인계 (2026-11-10 저녁 갱신)
+# 배경 「UFO 돔」 인계 (2026-11-11 갱신)
 
 다음 세션이 이어서 하는 작업이다. 여기부터 읽는다. 다른 PC 에서도 이 문서와 브랜치만으로 이어 갈 수 있게 썼다.
 
-## 11-10 저녁 — 성능 · 라이브 조명 3단계 (다음 세션은 여기부터)
+## 11-11 — 병합 전 점검 · 우주 바탕 사진 교체 (다음 세션은 여기부터)
+
+**브랜치 끝 = `feat/bg-dome` `f9eb7e4`(푸시됨).** 병합은 여전히 운영자 결정. 자료 = `ref/bg-dome/space-bg/`.
+
+### 병합 전 점검 결과(11-11 확인)
+- `main`(474a0f7, v4.11.12) 과 합쳐도 **충돌 없음**(`git merge-tree --write-tree origin/main origin/feat/bg-dome`). 브랜치는 v4.11.7 위에서 갈라져 main 이 50 커밋 앞섬.
+- 합친 트리에서 프론트 self-check 27개 통과(`bdayscene-yuno` 는 `fixtures/` 를 같이 꺼내야 돈다), 모든 `js` 문법 검사 통과.
+- 문서(SPEC 「배경 보기 UFO 돔」 · CLAUDE.md 모듈 목록 · TERMINOLOGY · README 「사용한 공개 자료」)는 브랜치에 이미 있음.
+
+### 우주 바탕 사진 — 운영자 결정(11-11)
+- **기준**: 라이선스 · 이용 조건 원문이 **표시 방식을 정하지 않으면 `assets/bg/README.md` 기재로 쓴다.** 원문이 화면 표시를 요구하면 뺀다.
+- **ESO 은하수 `space-eso` 뺌** — ESO 이용 안내 원문: 출처가 「clear and visible」, 「not be hidden or disassociated from the image」, 유튜브 설명란도 「not visible as we request」 로 거절 → README 로는 안 됨.
+- **`space-starmap`(NASA SVS Deep Star Maps 2020) 유지** — Gaia 원문은 「credit is given to 'ESA/Gaia/DPAC'」 뿐(표시 방식 · 라이선스 이름 없음). README 의 옛 「CC BY-NC 3.0 IGO」 는 **근거 없는 기록이라 고침**.
+- **추가 3장**(모두 4096 × 2048 WebP):
+  | 파일 | 원본 | 조건(원문) | 크기 |
+  |---|---|---|---|
+  | `space-tycho.webp` | NASA SVS 3572 Tycho Catalog Skymap v2.0 **t5**(은하수 가장 밝은 판) | SVS 「All of our content is in the public domain (unless otherwise noted)」 | 1.9MB(q60) |
+  | `space-edr3.webp` | Commons 「Milky Way 360 equirectangular rendering with foreground stars removed」(Kevinmloch, Gaia EDR3) | CC BY-SA 4.0, 표준 조건 외 요구 없음 — 가공본도 CC BY-SA 4.0 | 0.89MB |
+  | `space-wise.webp` | NASA/JPL PIA15482 WISE 전천(직사각 형식) | JPL Image Use Policy 「may be used for any purpose without prior permission」, 캡션 출처 문구 요청 · 위치 지정 없음 | 0.92MB |
+- 바탕 = 방문마다 `map · tycho · edr3 · wise · shader` 다섯 중 하나(`bgdomegl.js` `SPACE_MODE`, 확인용 `?bgdebug&bgspace=…`).
+- **우주에 들어갈 때마다(첫 화면 포함) 바탕 무작위 방향**(`randomSpaceRot`, 운영자 11-11) — 전엔 첫 진입은 회전 없음 · 워프/성간 이동 뒤에만 무작위. 딥필드 · 달 궤도는 그 뒤 `placePhoto` 로 그대로 놓인다(캡처로 확인).
+- 검토 후 탈락: NASA SVS Deep Star Maps 2012(3895, 퍼블릭 도메인이지만 은하수가 거의 안 보임 — `tycho_vs_starmap2020_2012.jpg`) · Poly Haven 밤하늘(CC0 지만 아래 절반이 지면 — 워프 무작위 회전으로 머리 위에 올 수 있음) · Solar System Scope 8k(너무 어두움) · Spitzer GLIMPSE 360(은하면 한 줄뿐) · 2MASS PIA04251(데이터 지도).
+
+### 남은 일
+1. **edr3 노출** — 지도 노출 1.5(다른 지도와 같음)에서 은하 중심이 하얗게 포화(`all5_modes.jpg` · `deep_moon.jpg`). 낮출지 운영자 결정 대기. tycho 의 1.5 도 눈으로 정한 값(ESO 는 1.8 이었음) — 확인 필요.
+2. **CLAUDE.md 「추측으로 작업하지 않는다」 규칙** — 운영자 지시로 썼지만 **main 작업 사본에만 있고 커밋 안 됨**(main 직접 푸시 = 병합이라 보류). 내용 = `space-bg/claude_md_no_guessing.patch`. 브랜치 + PR 로 올릴지 운영자에게.
+3. `space-deep` 원본 페이지 주소가 아직 기록에 없음(README 맨 아래 줄). starmap 은 4851 로 채움.
+4. 병합 전 정리(아래 「병합 전 정리」 + 11-10 남은 일)에서 **아직 결정 안 된 것**: `window.__bg*` 확인용 전역 · `?bgdebug` 주소 옵션 남길지 · 시안 `?bg=a·b·c` · `bgvirtual.js` 정리 · 아라레 조명 임시색 `#FFD27A` · 노노카 조명 색 구별 · PC 조작 · 위치 실패 처리 · S23 실측(11-10 세 가지) · iPhone · 예고보드 페이지 그리기 비용.
+5. 병합하면: v4.12.0 태그 · VERSION.md 대조표/상세 · README · CLAUDE.md 현재 버전 · `APP_VERSION`/`APP_DATE`.
+
+### 확인 방법(이번에 쓴 것)
+- 이 PC 서버 `127.0.0.1:8102`(feat-bg-dome 워크트리를 서비스 중). `node ref/bg-dome/space-bg/shot.mjs <출력폴더> map tycho edr3 wise shader`(env `ANG='[[20,15],[140,35],[260,60]]'`) — 헤드리스 크롬 390 × 760 · swiftshader, 화면 구역을 숨기고 `__bgview` 로 방향 고정, 콘솔 오류 출력. 딥필드 · 달 궤도 = `shot_deep.mjs`(`__bgplace` 후 `__bgdome.state.moonC` 로 사진 방향을 찾아 본다).
+- 바탕이 무작위 방향이라 같은 각도로 찍어도 매번 다른 하늘이 나온다 — 비교는 여러 번 찍거나 `__bgplace` 로.
+
+## 11-10 저녁 — 성능 · 라이브 조명 3단계
 
 운영자 검토(「메인 기능을 해치나 · 즐거운가 · 시너지」) 뒤 지시한 세 가지를 순서대로 넣었다. **병합은 아직 안 한다**(운영자 11-10). 구현 = Haiku, 검증 = Claude(창 없는 크롬).
 
