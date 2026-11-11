@@ -63,7 +63,7 @@ const st = {
   closing: false,     // 모바일 시트가 내려가는 중 — 끝날 때까지 프레임은 재생부 자리를 따른다
   dock: null,         // PC 하단 도크 컨테이너(#player-dock). 있으면 팝업 본체가 거기 상시 표시된다
   slotVisible: false, // 도크의 재생부가 화면에 보이는가
-  tab: "songs",       // 아래 영역 탭 — "play"(재생 바 · 모바일만) | "songs"(곡 찾기) | "queue" (팝업을 다시 열어도 유지)
+  tab: "play",        // 아래 영역 탭 — "play"(재생 바 · 모바일만) | "songs"(곡 찾기) | "queue" (팝업을 다시 열어도 유지) (핫픽스) 첫 진입 = 1번째 탭 — 모바일 재생 바, PC 는 shownTab 이 곡 찾기로 바꿔 보인다
   shuffle: false,
   repeat: "off",      // "off" | "one" | "all" — 버튼을 누를 때마다 순환 (BPM 과 같다)
   queue: [],          // 재생목록 — 곡 id 를 쌓은 순서대로(같은 곡을 여러 번 쌓을 수 있다)
@@ -88,6 +88,7 @@ let lastFocus = null;
 let loadPromise = null;
 let wantPlay = false;  // 플레이어가 준비되기 전에 요청된 곡의 자동 재생 여부
 let listenedId = null; // (v4.8.1) 이번에 고른 곡의 재생을 이미 기록했는가 — 일시정지 후 다시 재생 · 한 곡 반복은 새로 기록하지 않는다
+let qTabMode = null;   // (핫픽스) 재생목록 탭 표시 — "label"(재생목록 글자) | "badge"(# n/M). null = 아직 안 그림
 
 // (v4.8.1) 들은 곡 기록 — localStorage `ymmt_listened` = {곡 id: 마지막으로 재생한 날(KST "YYYY-MM-DD")}. 랜덤플리 오마카세가 순서를 정할 때 읽는다.
 // 이 브라우저에만 남는다. 저장소를 못 쓰면(차단 · 시크릿 창) 기록 없이 동작 — 오마카세는 전부 안 들은 곡으로 보고 섞는다.
@@ -757,7 +758,7 @@ function build() {
   el.ctlTip = h("div", { class: "mp-ctltip", role: "status" });   // (마이크로 인터랙션) 반복 · 셔플 상태 말풍선
   // 랜덤플리 오마카세 — 버튼 + 말풍선(전체/오리지널/커버)
   el.omaT = h("span", { class: "mp-oma__t" });
-  el.oma = h("button", { type: "button", class: "mp-oma", "aria-haspopup": "dialog", "aria-expanded": "false", on: { click: toggleOma } }, h("span", { class: "mp-oma__e", "aria-hidden": "true", text: "🎁" }), el.omaT);
+  el.oma = h("button", { type: "button", class: "mp-oma", "aria-haspopup": "dialog", "aria-expanded": "false", "aria-label": "랜덤플리 오마카세", title: "랜덤플리 오마카세", on: { click: toggleOma } }, h("span", { class: "mp-oma__e", "aria-hidden": "true", text: "🎁" }), el.omaT);
   setOmaLabel(OMA_LABEL);
   el.omaCount = {};
   el.omaBub = h("div", { class: "mp-bubble", role: "dialog", "aria-label": "랜덤플리 종류", hidden: true },
@@ -793,7 +794,7 @@ function build() {
     el.undo,
   );
   // (v4.11.6) .mp-play = 곡 정보 · 컨트롤. PC 는 display:contents 라 재생부 그대로, 모바일은 「재생」 탭 패널이 된다
-  // (v4.11.11) 재생 바 탭 아래 「다음 곡」 3줄 — 모바일에서만 보인다(paintNext)
+  // (v4.11.11) 재생 바 탭 아래 「다음 곡」 최대 3줄(화면에 맞춰 1~3줄, fitNext) — 모바일에서만 보인다(paintNext). (핫픽스) 머리줄 없음 — 순번은 재생목록 탭 배지(n/M)
   el.next = h("section", { class: "mp-next", "aria-label": "다음 곡" });
   el.play = h("div", { class: "mp-play", id: "mp-panel-play" },
     h("div", { class: "mp-song" }, h("div", { class: "mp-song__txt" }, el.sTitle, el.sMeta, el.sKo), el.media, el.mvTip),
@@ -820,13 +821,14 @@ function build() {
     el.count,
   );
 
-  // 탭 — PC: 곡 찾기 | 재생목록(배지 = 재생목록 곡 수, 오른쪽 칸). 모바일(v4.11.6): 재생 바 | 곡 찾기 | 재생목록 — 프레임 아래 한 칸을 세 탭이 나눠 쓴다.
-  el.badge = h("span", { class: "mp-badge", text: "0" });
+  // 탭 — PC: 곡 찾기 | 재생목록(배지 = 비었으면 배지 없음, 1곡 이상이면 「재생목록」 글자 대신 「# n/M」, 오른쪽 칸). 모바일(v4.11.6): 재생 바 | 곡 찾기 | 재생목록 — 프레임 아래 한 칸을 세 탭이 나눠 쓴다.
+  el.badge = h("span", { class: "mp-badge", hidden: true });
   el.tabSongs = h("button", { type: "button", class: "mp-tab mp-tab--songs", role: "tab", id: "mp-tab-songs", "aria-controls": "mp-panel-songs", on: { click: () => setTab("songs"), keydown: onTabKey } },
     icon("search", "mp-ico mp-tab__ico"), "곡 찾기");   // (v4.11.11) PC · 모바일 같은 이름
   el.tabPlay = h("button", { type: "button", class: "mp-tab mp-tab--play", role: "tab", id: "mp-tab-play", "aria-controls": "mp-panel-play", text: "재생 바", on: { click: () => setTab("play"), keydown: onTabKey } });   // 모바일에서만 보인다
-  el.tabQueue = h("button", { type: "button", class: "mp-tab mp-tab--queue", role: "tab", id: "mp-tab-queue", "aria-controls": "mp-panel-queue", on: { click: () => setTab("queue"), keydown: onTabKey } },
-    icon("list", "mp-ico mp-tab__ico"), "재생목록 ", el.badge);   // (v4.11.11) 앞에 목록 아이콘
+  el.tabQLab = h("span", { class: "mp-tab__lab", text: "재생목록" });
+  el.tabQueue = h("button", { type: "button", class: "mp-tab mp-tab--queue", role: "tab", id: "mp-tab-queue", "aria-controls": "mp-panel-queue", "aria-label": "재생목록", on: { click: () => setTab("queue"), keydown: onTabKey } },
+    icon("list", "mp-ico mp-tab__ico"), el.tabQLab, el.badge);   // (v4.11.11) 앞에 목록 아이콘 · (핫픽스) 1곡 이상이면 글자 대신 배지 「# n/M」
   el.tabBar = h("div", { class: "mp-tabs", role: "tablist", "aria-label": "플레이어 보기" }, el.tabPlay, el.tabSongs, el.tabQueue);
   el.qPanel = h("div", { class: "mp-qpanel", id: "mp-panel-queue", hidden: true }, el.qBox);
   el.panels = h("div", { class: "mp-panels" }, el.lib, el.qPanel);
@@ -891,6 +893,8 @@ function build() {
   if (window.visualViewport) for (const ev of ["resize", "scroll"]) window.visualViewport.addEventListener(ev, syncKb);   // 키보드가 가리는 만큼 검색 결과 칸을 띄운다
   el.body.addEventListener("scroll", () => { if (st.popOpen) layoutFrame(); }, { passive: true });   // 모바일 모달은 본문이 스크롤된다 — 프레임이 재생부 자리를 따라가게
   if (typeof ResizeObserver === "function") new ResizeObserver(layoutFrame).observe(el.slot);
+  // (핫픽스) 재생 바 탭 높이 · 곡 정보(번역 줄 등) · 안내 · 오류 칸 크기가 바뀌면 다음 곡 줄 수를 다시 맞춘다. el.next 는 감시하지 않는다(숨김이 다시 불러 되먹임)
+  if (typeof ResizeObserver === "function") { const ro = new ResizeObserver(() => fitNext()); for (const n of [el.play, el.play.querySelector(".mp-song"), el.err, el.skip]) if (n) ro.observe(n); }
   paintTabs();
 }
 
@@ -914,6 +918,7 @@ function paintTabs() {
   }
   if (isPhone()) { el.play.setAttribute("role", "tabpanel"); el.play.setAttribute("aria-labelledby", el.tabPlay.id); }
   else { el.play.removeAttribute("role"); el.play.removeAttribute("aria-labelledby"); }
+  fitNext();   // (핫픽스) 탭을 재생 바로 바꿀 때 다음 곡 줄 수를 다시 맞춘다
 }
 
 function setTab(t) {
@@ -955,9 +960,13 @@ function paintStage() {
   const s = curSong();
   el.sTitle.replaceChildren(s ? s.title : "곡을 고르세요", ...(s && isNewSong(s) ? [" ", newPill()] : []));
   el.sMeta.replaceChildren();
+  el.sMeta.classList.toggle("is-original", !!s && s.kind === "original");
   el.sKo.textContent = s ? displayKo(s) : "";
   if (s) {
-    el.sMeta.append(...memberNodes(s), `${KIND_LABEL[s.kind] || s.kind} · ${s.date}`);
+    // (핫픽스) 멤버 부분을 감싸 둔다 — 모바일 재생 바에서 오리지널이면 CSS 가 숨긴다(오리지널은 전부 그룹 명의라 이름이 길어 줄이 꺾였다)
+    const who = memberNodes(s);
+    if (who.length) el.sMeta.append(h("span", { class: "mp-song__who" }, ...who));
+    el.sMeta.append(`${KIND_LABEL[s.kind] || s.kind} · ${s.date}`);
   }
   el.err.hidden = !st.error;
   el.err.replaceChildren();
@@ -1020,7 +1029,24 @@ function focusQueueCur() {
 
 function paintQueue() {
   if (!built) return;
-  el.badge.textContent = String(st.queue.length);
+  // (핫픽스) 재생목록이 비었으면 「재생목록」 만(배지 숨김), 1곡 이상이면 「재생목록」 글자를 숨기고 배지에 「# n/M」(n = 현재곡 번호, 재생목록 밖 곡이면 –). 전환 때 짧은 움직임(swapQTab)
+  const len = st.queue.length;
+  const pos = st.qi >= 0 && st.qi < len ? st.qi + 1 : 0;
+  const mode = len ? "badge" : "label";
+  const text = len ? `# ${pos || "–"}/${len}` : "";
+  const prevMode = qTabMode, prevText = el.badge.textContent;
+  qTabMode = mode;
+  if (prevMode === null || calm()) {
+    el.tabQLab.hidden = mode === "badge";
+    el.badge.hidden = mode === "label";
+    el.badge.textContent = text;
+  } else if (prevMode !== mode) {
+    swapQTab(mode, text);
+  } else if (text !== prevText) {
+    el.badge.textContent = text;
+    el.badge.animate([{ translate: "0 5px", opacity: 0 }, { translate: "0 0", opacity: 1 }], { duration: 160, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
+  }
+  el.badge.setAttribute("aria-label", !len ? "재생목록 비어 있음" : pos ? `${len}곡 중 ${pos}번째 재생 중` : `${len}곡, 재생목록 밖 곡 재생 중`);
   el.qCount.textContent = `${st.queue.length}곡`;   // (v4.11.11) 0곡도 표시
   el.qClear.hidden = false;
   el.qClear.disabled = !st.queue.length;
@@ -1053,14 +1079,35 @@ function paintQueue() {
   paintNext();
 }
 
+/** (핫픽스) 재생목록 탭 글자 ↔ 배지 전환 — 나가는 쪽 120ms 뒤 들어오는 쪽 180ms. 도중에 다시 바뀌면 진행 중인 움직임을 버리고 새 방향으로. */
+function swapQTab(mode, text) {
+  const toBadge = mode === "badge";
+  const out = toBadge ? el.tabQLab : el.badge;
+  const inn = toBadge ? el.badge : el.tabQLab;
+  for (const n of [out, inn]) n.getAnimations().forEach((a) => { if (a.id === "qtab") a.cancel(); });
+  if (toBadge) el.badge.textContent = text;
+  const outA = out.animate(toBadge
+    ? [{ translate: "0 0", opacity: 1 }, { translate: "0 -6px", opacity: 0 }]
+    : [{ scale: "1", opacity: 1 }, { scale: "0.6", opacity: 0 }], { duration: 120, easing: "ease-in" });
+  outA.id = "qtab";
+  outA.onfinish = () => {
+    if (qTabMode !== mode) return;   // 그사이 다시 바뀌었으면 새 전환이 처리한다
+    out.hidden = true;
+    inn.hidden = false;
+    if (!toBadge) el.badge.textContent = "";
+    const inA = inn.animate([{ translate: "0 6px", opacity: 0 }, { translate: "0 0", opacity: 1 }], { duration: 180, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
+    inA.id = "qtab";
+  };
+}
+
 // ── (v4.11.11) 재생 바 탭 — 「다음 곡」 3줄 ─────────────────────────────
 /** 다음 곡 3줄 계산. rows 는 항상 3개, rows[0] 이 「바로 다음」. 화면 표시용이라 상태를 바꾸지 않는다.
  *  Row = {kind:"song", i, id, label?} | {kind:"mystery"} | {kind:"note", text, sub?} | {kind:"blank"}. */
 function upNext() {
   const blank = { kind: "blank" };
   const len = st.queue.length;
-  if (!len) return { head: "다음 곡", rows: [{ kind: "note", text: "곡 찾기에서 곡을 누르면 여기에 이어집니다" }, blank, blank] };
-  if (st.qi < 0) return { head: "다음 곡", rows: [{ kind: "note", text: "이 곡이 끝나면 멈춥니다", sub: "재생목록의 곡을 누르면 거기서부터 이어집니다" }, blank, blank] };
+  if (!len) return { rows: [{ kind: "note", text: "곡 찾기에서 곡을 누르면 여기에 이어집니다" }, blank, blank] };
+  if (st.qi < 0) return { rows: [{ kind: "note", text: "이 곡이 끝나면 멈춥니다", sub: "재생목록의 곡을 누르면 거기서부터 이어집니다" }, blank, blank] };
   // 지금 곡 뒤 k 번째 칸 — 재생목록 안이면 곡, 넘치면 전체 반복일 때만 감아서 넣는다. 없으면 null.
   const pos = (k) => {
     const j = st.qi + k;
@@ -1070,13 +1117,13 @@ function upNext() {
   };
   if (st.repeat === "one") {
     const rest = [1, 2].map((k) => (st.shuffle ? { kind: "mystery" } : (pos(k) || blank)));
-    return { head: "다음 곡 · 한 곡 반복", rows: [{ kind: "song", i: st.qi, id: st.queue[st.qi], label: "반복" }, ...rest] };
+    return { rows: [{ kind: "song", i: st.qi, id: st.queue[st.qi], label: "반복" }, ...rest] };
   }
   if (st.shuffle) {
-    if (!queueHasNext()) return { head: "다음 곡 · 셔플", rows: [{ kind: "note", text: "이 곡이 끝나면 멈춥니다", sub: "전체 반복을 켜면 1번부터 다시" }, blank, blank] };
+    if (!queueHasNext()) return { rows: [{ kind: "note", text: "이 곡이 끝나면 멈춥니다", sub: "전체 반복을 켜면 1번부터 다시" }, blank, blank] };
     const remain = st.queue.filter((_, k) => k !== st.qi && !st.played.has(k)).length;
     const n = st.repeat === "all" ? 3 : Math.min(3, remain);
-    return { head: "다음 곡 · 셔플", rows: [1, 2, 3].map((k) => (k <= n ? { kind: "mystery" } : blank)) };
+    return { rows: [1, 2, 3].map((k) => (k <= n ? { kind: "mystery" } : blank)) };
   }
   const rows = [];
   let stopped = false;
@@ -1087,18 +1134,16 @@ function upNext() {
     stopped = true;
     rows.push(k === 1 ? { kind: "note", text: "이 곡이 끝나면 멈춥니다", sub: "전체 반복을 켜면 1번부터 다시" } : { kind: "note", text: "여기서 멈춥니다" });
   }
-  const head = `다음 곡 · 재생목록 ${st.qi + 1}/${len}` + (st.repeat === "all" ? " · 전체 반복" : "");
-  return { head, rows };
+  return { rows };
 }
 
 /** 다음 곡 칸 그리기 — 모바일 재생 바 탭 안에서만 보인다(CSS). */
 function paintNext() {
   if (!built) return;
-  const { head, rows } = upNext();
+  const { rows } = upNext();
   const blankRow = (first) => h("div", { class: "mp-next__row is-blank" + (first ? " is-first" : "") },
     h("span", { class: "mp-next__lab", text: "·" }), h("span", { class: "mp-next__t", text: "—" }));
   el.next.replaceChildren(
-    h("div", { class: "mp-next__head", text: head }),
     ...rows.map((row, k) => {
       const first = k === 0;
       const cls = "mp-next__row" + (first ? " is-first" : "");
@@ -1125,6 +1170,39 @@ function paintNext() {
       return blankRow(first);
     }),
   );
+  fitNext();
+}
+
+/** (핫픽스) 재생 바 탭이 스크롤되지 않게 다음 곡 줄 수를 맞춘다 — 최대 3줄, 넘치면 뒤에서부터 숨겨 최소 1줄. 모바일 재생 바 탭에서만. */
+function fitNext() {
+  if (!built) return;
+  const rows = [...el.next.querySelectorAll(".mp-next__row")];
+  for (const r of rows) r.classList.remove("is-cut");
+  el.play.classList.remove("is-tight");
+  if (!isPhone() || st.dock || shownTab() !== "play" || !el.play.clientHeight) { fitMarquee(); return; }
+  const over = () => el.play.scrollHeight > el.play.clientHeight + 1;
+  for (let k = rows.length - 1; k >= 1 && over(); k--) rows[k].classList.add("is-cut");
+  if (over()) el.play.classList.add("is-tight");   // (핫픽스) 1줄로도 넘치면 여백 · 간격만 줄인다(글자 크기는 그대로)
+  fitMarquee();
+}
+
+/** (핫픽스) 다음 곡 첫 줄 제목이 칸보다 길면 무한 marquee — 같은 글을 두 번 이어 붙여 -50% 만큼 흘린다. 동작 줄이기 설정이면 말줄임(…) 그대로. */
+function fitMarquee() {
+  const t = el.next.querySelector(".mp-next__row.is-first .mp-next__t");
+  if (!t) return;
+  const text = t.dataset.text ?? t.textContent;
+  t.dataset.text = text;
+  t.classList.remove("is-marquee");
+  t.style.removeProperty("--mq-dur");
+  t.replaceChildren(text);
+  if (!t.clientWidth || t.scrollWidth <= t.clientWidth + 1) return;
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const one = () => h("span", { class: "mp-next__mqi", text });
+  const copy = one(); copy.setAttribute("aria-hidden", "true");
+  const track = h("span", { class: "mp-next__mq" }, one(), copy);
+  t.replaceChildren(track);
+  t.classList.add("is-marquee");
+  t.style.setProperty("--mq-dur", `${Math.max(6, track.scrollWidth / 2 / 40)}s`);   // 초당 약 40px
 }
 
 function paintGrip() {
@@ -1739,7 +1817,7 @@ export async function openPlayer() {
   followFrame(SHEET_MS + 80);
   await prepareContent();
   // (v4.11.7) 닫기 버튼이 숨겨진 폰이면 시트 자체에 포커스
-  requestAnimationFrame(() => { layoutFrame(); (el.closeBtn.offsetParent ? el.closeBtn : el.pop).focus({ preventScroll: true }); });
+  requestAnimationFrame(() => { layoutFrame(); fitNext(); (el.closeBtn.offsetParent ? el.closeBtn : el.pop).focus({ preventScroll: true }); });
 }
 
 export function closePlayer() {

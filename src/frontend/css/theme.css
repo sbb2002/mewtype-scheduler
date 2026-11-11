@@ -112,6 +112,11 @@
   --mp-accent: #6b5bc4;
   --mp-accent-fg: #ffffff;
   --mp-panel-2: #f0eefa;
+  --mp-chip-bg: #5a4bb0;                  /* (핫픽스) 오마카세 말풍선 칩 — 말풍선(옅은 라벤더)과 같은 계통의 진한 보라 · 흰 글자 */
+  --mp-chip-hover: #4a3c9a;
+  --mp-chip-edge: #4a3c9a;
+  --mp-chip-fg: #ffffff;
+  --mp-chip-sub: #ddd7f6;
   --mp-well: #eeebf7;
   --mp-well-sh1: rgba(35, 36, 54, 0.1);
   --mp-well-sh2: rgba(35, 36, 54, 0.06);
