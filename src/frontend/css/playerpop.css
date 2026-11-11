@@ -6,6 +6,11 @@
   --mp-accent: #a99be6;
   --mp-accent-fg: #121018;
   --mp-panel-2: #242429;
+  --mp-chip-bg: #181b21;                  /* (핫픽스) 오마카세 말풍선 칩 — 말풍선(--color-raised 회청)과 같은 계통의 진한 색 · 밝은 글자. 밝게 = theme.css */
+  --mp-chip-hover: #101217;
+  --mp-chip-edge: #4a5466;
+  --mp-chip-fg: #f2f3f7;
+  --mp-chip-sub: #a6aebd;
   --mp-well: #0e0e11;                     /* 재생목록 우물 바탕 · 그늘 · 가장자리 빛 */
   --mp-well-sh1: rgba(0, 0, 0, 0.75);
   --mp-well-sh2: rgba(0, 0, 0, 0.55);
@@ -216,14 +221,14 @@ html.mp-lock { overflow: hidden; }
 /* ── 랜덤플리 오마카세 (v4.5.6) — 컨트롤 오른쪽 버튼 + 말풍선(전체/오리지널/커버). 쿨타임 파이는 BPM 오마카세와 같은 방식 ── */
 .mp-oma-wrap { position: relative; }
 .mp-oma {
-  position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 6px;
-  height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 20px;
+  position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 0;
+  height: 40px; width: 40px; justify-content: center; padding: 0; border: 1px solid var(--color-border); border-radius: 50%;
   background: var(--mp-panel-2); font-size: 0.75rem; font-weight: 700; white-space: nowrap; cursor: pointer;
 }
 .mp-oma:hover:not(:disabled) { border-color: var(--mp-accent); color: var(--mp-accent); }
 .mp-oma:disabled { cursor: default; }
-.mp-oma__e { display: inline-block; font-size: 1.05rem; line-height: 1; }
-.mp-oma__t { display: inline-flex; }
+.mp-oma__e { display: inline-block; font-size: 1.2rem; line-height: 1; }
+.mp-oma__t { display: none; }   /* (핫픽스) 글자는 숨기고 🎁 만 — 이름은 aria-label · title */
 .mp-oma__t i { font-style: normal; display: inline-block; white-space: pre; }
 /* 뒤섞임: 버튼이 흔들리고 상자가 굴러가며, 글자는 JS 가 순서를 섞는다 */
 .mp-oma.rolling { animation: mp-oma-shake 0.62s ease; border-color: var(--mp-accent); color: var(--mp-accent); }
@@ -245,24 +250,29 @@ html.mp-lock { overflow: hidden; }
   .mp-oma.cooldown::after { animation: none; background: none; }
 }
 .mp-bubble {
-  position: absolute; right: 50%; transform: translateX(50%); bottom: calc(100% + 10px); z-index: 5; width: 224px; padding: 10px 10px 11px;
+  position: absolute; right: 0; top: calc(100% + 10px); z-index: 5; width: 224px; padding: 10px 10px 11px;   /* (핫픽스) PC: 버튼 아래로 뜬다(아래 공간이 넉넉하다). 모바일은 767px 블록에서 버튼 왼쪽 */
   background: var(--color-raised); border: 1px solid var(--color-raised-edge); border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 .mp-bubble[hidden] { display: none; }
 .mp-bubble::after {
-  content: ""; position: absolute; right: calc(50% - 5px); top: 100%; width: 10px; height: 10px; margin-top: -5px;
-  background: var(--color-raised); border: solid var(--color-raised-edge); border-width: 0 1px 1px 0; transform: rotate(45deg);
+  content: ""; position: absolute; right: 15px; bottom: 100%; width: 10px; height: 10px; margin-bottom: -5px;   /* 위쪽(버튼 쪽)을 가리키는 화살표 */
+  background: var(--color-raised); border: solid var(--color-raised-edge); border-width: 1px 0 0 1px; transform: rotate(45deg);
 }
 .mp-bubble__h { margin: 0 2px 8px; font-size: 0.7rem; color: var(--color-text-muted); }
 .mp-bubble__chips { display: flex; gap: 6px; }
-.mp-chip { flex: 1; padding: 7px 0; border: 1px solid var(--color-border); border-radius: 8px; background: var(--mp-panel-2); font-size: 0.78rem; font-weight: 600; cursor: pointer; }
-.mp-chip:hover { border-color: var(--mp-accent); color: var(--mp-accent); }
-.mp-chip small { display: block; margin-top: 1px; font-size: 0.62rem; font-weight: 400; color: var(--color-text-muted); }
-@media (max-width: 480px) {   /* 좁은 화면: 컨트롤 아래 줄 전체 폭으로 */
-  .mp-oma-wrap { flex: 1 0 100%; }
-  .mp-oma { width: 100%; justify-content: center; }
+/* (핫픽스) 칩이 말풍선 바탕(--color-raised)과 거의 같은 색이라 버튼으로 안 보였다 — 말풍선과 같은 계통의 진한 바탕(--mp-chip-*) + 대비되는 글자 + 아래로 옅은 그림자. 누르면 살짝 내려앉는다 */
+.mp-chip {
+  flex: 1; padding: 7px 0; border: 1px solid var(--mp-chip-edge); border-radius: 8px;
+  background: var(--mp-chip-bg); color: var(--mp-chip-fg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22); font-size: 0.78rem; font-weight: 700; cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.1s ease;
 }
+.mp-bubble .mp-chip { color: var(--mp-chip-fg); }   /* `.mp-pop button { color: inherit }` 이 더 구체적이라 한 단계 올려 덮는다 */
+.mp-chip:hover { background: var(--mp-chip-hover); }
+.mp-chip:active { transform: translateY(1px); box-shadow: none; }
+.mp-chip small { display: block; margin-top: 1px; font-size: 0.62rem; font-weight: 400; color: var(--mp-chip-sub); }
+/* (핫픽스) 오마카세는 기기와 상관없이 컨트롤 줄 끝의 🎁 버튼 — 좁은 화면 전체 폭 줄은 없앴다 */
 .mp-err { padding: 8px 10px; border: 1px solid var(--color-late); border-radius: 8px; font-size: 0.75rem; color: var(--color-late); }
 .mp-err[hidden] { display: none; }
 .mp-err a { text-decoration: underline; }
@@ -387,6 +397,7 @@ html.mp-lock { overflow: hidden; }
 
 /* (v4.11.11) 다음 곡 칸 — PC 에서는 숨기고 모바일 재생 바 탭에서만 보인다(아래 모바일 블록) */
 .mp-next { display: none; }
+@keyframes mp-mq { from { transform: translateX(0); } to { transform: translateX(-50%); } }   /* (핫픽스) 첫 줄 제목 marquee 흘림 — 미디어 쿼리 밖 */
 
 /* ── 목록부 ───────────────────────────────────────────────────────── */
 .mp-lib { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -614,14 +625,13 @@ html.mp-lock { overflow: hidden; }
   .mp-pop .mp-tab { padding: 10px 6px; }
   .mp-pop .mp-tab--play { display: inline-flex; }
   .mp-side > .mp-err, .mp-side > .mp-skip { order: 3; flex: none; margin: 6px 12px 0; }
-  .mp-play { order: 4; display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 12px; padding: 12px; overflow-y: auto; overscroll-behavior: contain; }
+  .mp-play { order: 4; display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 12px; padding: 12px; overflow: hidden; }
   .mp-panels { order: 4; }
   .mp-pop[data-tab="play"] .mp-panels, .mp-pop:not([data-tab="play"]) .mp-play { display: none; }
   .mp-pc-only { display: none; }
   .mp-m-only { display: inline; }
-  /* (v4.11.11) 재생 바 탭 아래 다음 곡 3줄 — 첫 줄(바로 다음)은 크고 또렷하게, 나머지 두 줄은 작고 흐리게 */
+  /* (v4.11.11) 재생 바 탭 아래 다음 곡 최대 3줄 · 공간이 모자라면 1줄까지(fitNext) — 첫 줄(바로 다음)은 크고 또렷하게, 나머지 두 줄은 작고 흐리게 */
   .mp-next { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid var(--color-border); }
-  .mp-next__head { font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); letter-spacing: 0.02em; }
   .mp-next__row { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 10px; align-items: center; width: 100%; padding: 4px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--color-text-muted); font-size: 0.8rem; text-align: left; }
   button.mp-next__row:hover { background: var(--mp-panel-2); }
   .mp-next__lab { grid-row: span 2; justify-self: center; font-size: 0.68rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -636,6 +646,17 @@ html.mp-lock { overflow: hidden; }
   .mp-next__row.is-blank:not(.is-first) { opacity: 0.45; }
   .mp-next__row.is-mystery .mp-next__t { letter-spacing: 0.15em; }
   .mp-next__row .mp-dot { margin-right: 3px; }
+  .mp-next__row.is-cut { display: none; }   /* (핫픽스) fitNext 가 공간이 모자랄 때 뒤 줄부터 숨긴다 — display:grid 라 hidden 속성으로는 안 숨는다 */
+  .mp-play.is-tight { gap: 6px; padding: 6px 12px; }   /* (핫픽스) 1줄로도 넘칠 때 여백 · 간격만 줄인다 */
+  .mp-play.is-tight .mp-next { padding-top: 4px; gap: 2px; }
+  .mp-play.is-tight .mp-next__row.is-first { padding-top: 4px; padding-bottom: 4px; }
+  .mp-bubble { right: calc(100% + 10px); top: auto; bottom: 0; }   /* (핫픽스) 모바일: 위로 뜨면 재생 바 칸(overflow:hidden) 위에서 잘린다 — 🎁 버튼 왼쪽, 아래 끝 맞춤 */
+  .mp-bubble::after { top: auto; bottom: 15px; right: -5px; margin-top: 0; margin-bottom: 0; border-width: 1px 1px 0 0; }   /* 화살표를 오른쪽(버튼 쪽)으로 */
+  .mp-next__t.is-marquee { text-overflow: clip; }
+  .mp-next__mq { display: inline-flex; animation: mp-mq var(--mq-dur, 10s) linear infinite; }
+  .mp-next__mqi { flex: none; padding-right: 2.5em; }
+  .mp-song__meta.is-original .mp-song__who { display: none; }   /* (핫픽스) 재생 바: 오리지널은 밴드명 없이 「오리지널 · 날짜」 */
+  .mp-song__ko { display: none; }   /* (핫픽스) 재생 바: 한글 독음은 숨긴다(PC 재생부는 그대로) */
   /* 곡 찾기 탭: 검색 · 필터 줄은 위에 붙고 곡 줄만 지나간다 */
   .mp-lib { height: auto; overflow-y: auto; overscroll-behavior: contain; }
   .mp-lib .mp-tools { position: sticky; top: 0; z-index: 2; gap: 6px; padding: 8px 12px; background: var(--color-bg-secondary); }
@@ -718,4 +739,12 @@ html.mp-lock { overflow: hidden; }
   .mp-badge.pulse { animation: none; }
   .mp-ftab { transition-duration: 80ms; }
   .mp-frame.is-playing .mp-ftab__eq i, .mp-edge.is-armed .mp-edge__chev svg, .mp-edge.is-bump .mp-edge__lip { animation: none; }
+}
+
+/* (핫픽스) 재생목록 탭: 1곡 이상이면 「재생목록」 글자(.mp-tab__lab)를 숨기고 배지에 「# n/M」 — 폰에서 탭 글자가 두 줄로 꺾이지 않게 한 줄 고정 */
+.mp-tab__lab[hidden] { display: none; }
+.mp-badge[hidden] { display: none; }   /* .mp-badge 의 display:inline-grid 가 hidden 을 이기므로 */
+.mp-tab__lab { display: inline-block; }   /* (핫픽스) 인라인 글자에는 translate 가 안 먹으므로 — 전환 움직임용 */
+@media (max-width: 767px) {
+  .mp-pop .mp-tab { white-space: nowrap; }
 }
