@@ -114,6 +114,7 @@ function createCard(item, nowMs, channelData, laneKey) {
       ? "card card--announced card--sched-live"
       : "card card--announced";
     if (isCollab) a.classList.add("card--collab");
+    if (item.is_premiere) a.classList.add("card--premiere");
     a.href = item.url || (channelData && channelData.channel_url) || "#";
     markCopy(a, item, channelData && channelData.channel_url, "upcoming", Date.parse(item.scheduled_start));
 
@@ -134,6 +135,7 @@ function createCard(item, nowMs, channelData, laneKey) {
     const badge = document.createElement("span");
     badge.className = isCollab ? "card__badge card__badge--collab" : "card__badge card__badge--announced";
     badge.textContent = isCollab ? "합동" : "예고";
+    if (item.is_premiere) { badge.className = "card__badge card__badge--premiere"; badge.textContent = "PREMIERE"; }
     thumbWrap.appendChild(badge);
     a.appendChild(thumbWrap);
 
@@ -214,6 +216,7 @@ function createCard(item, nowMs, channelData, laneKey) {
   const isCollab = item.kind === "collab" || (Array.isArray(item.collab_with) && item.collab_with.length > 0);
 
   a.className = "card";
+  if (item.is_premiere) a.classList.add("card--premiere");
   if (isLive) {
     a.classList.add("card--live");
   } else if (isEnd) {
@@ -258,7 +261,12 @@ function createCard(item, nowMs, channelData, laneKey) {
     thumbWrap.appendChild(img);
   }
 
-  if (isLive) {
+  if (item.is_premiere && !isEnd) {
+    const badge = document.createElement("span");
+    badge.className = "card__badge card__badge--premiere";
+    badge.textContent = "PREMIERE";
+    thumbWrap.appendChild(badge);
+  } else if (isLive) {
     const badge = document.createElement("span");
     badge.className = "card__badge card__badge--live";
     badge.textContent = "LIVE";

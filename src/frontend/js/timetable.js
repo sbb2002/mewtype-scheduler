@@ -397,6 +397,7 @@ function blockEl(entry, state, ctx, geo, rowKey) {
   const it = entry.item;
   const b = el("div", `tt-blk tt-blk--${state}`);
   if (isCollab(it)) b.classList.add("tt-blk--collab");
+  if (it.is_premiere) b.classList.add("tt-blk--premiere");
   if (state === "upcoming" && entry.start - ctx.nowMs < SOON_MS && entry.start >= ctx.nowMs) b.classList.add("tt-blk--soon");
   b.setAttribute("role", "button");
   b.tabIndex = 0;
@@ -912,6 +913,7 @@ function updateLiveRing(card, nowMs) {
 function todayCard(entry, state, ctx, big, laneKey) {
   const it = entry.item;
   const a = el("a", `tcard tcard--${state}` + (big ? " tcard--big" : ""));
+  if (it.is_premiere) a.classList.add("tcard--premiere");
   const url = hasVideo(it) && it.url ? it.url : (ctx.channels[it.channel_key] || {}).channel_url || "#";
   a.href = url; a.target = "_blank"; a.rel = "noopener";
   markCopy(a, it, (ctx.channels[it.channel_key] || {}).channel_url, state, entry.start);
@@ -949,6 +951,7 @@ function todayCard(entry, state, ctx, big, laneKey) {
     pills.appendChild(lock);
   }
   if (state === "ended") pills.appendChild(el("div", "tcard__pill tcard__pill--end", "종료"));
+  else if (it.is_premiere) pills.appendChild(el("div", "tcard__pill tcard__pill--premiere", "PREMIERE"));
   else if (state === "live") pills.appendChild(el("div", "tcard__pill tcard__pill--live", "LIVE"));
   if (pills.children.length) th.appendChild(pills);
   a.appendChild(th);
