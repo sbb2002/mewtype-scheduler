@@ -901,3 +901,8 @@ html.wk-lock .tt-pop { z-index: 900; }          /* 시트 위에 카드 팝업 *
 @media (prefers-reduced-motion: reduce) {
   .wk-scrim, .wk-sheet { transition: none !important; }
 }
+
+/* Premiere edges in the timetable and mobile cards. */
+.tt-blk.tt-blk--premiere, .tcard.tcard--premiere { border: 2px solid #facc15; }
+
+.tcard__pill.tcard__pill--premiere { background: #facc15; color: #1a1a1a; }

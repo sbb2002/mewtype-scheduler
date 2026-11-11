@@ -342,3 +342,9 @@
     justify-content: center;
   }
 }
+
+/* Premiere edges take priority over broadcast state. */
+.card.card--premiere { border: 2px solid #facc15; }
+.card.card--premiere:hover { box-shadow: 0 4px 12px rgba(250, 204, 21, 0.25); }
+
+.card__badge.card__badge--premiere { background: #facc15; color: #1a1a1a; box-shadow: none; }

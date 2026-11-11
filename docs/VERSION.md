@@ -240,6 +240,8 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
 | v3.8.7a | `a557918` | 09-22 23:36 | v3.8.7 후속 |
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
+- **v4.11.13** (hotfix, 2026-11-12, `hotfix/premiere-card`): Premiere previews use yellow borders and a yellow `PREMIERE` thumbnail badge on PC/mobile cards; timetable blocks use yellow borders. Backend carries `is_premiere` from YouTube into preview items and retains confirmed metadata. Validation: preview_build 17 scenarios; timetable 54 checks; render 16 checks; Chromium with actual Nonoka preview `AG9NYiX3RzQ`. Frontend deploys automatically on main; backend deployment pending operator instruction. Rollback: previous main `474a0f7`. Merge commit: see tag table.
+
 - **v4.11.12** (일반 패치, 2026-11-11 — 브랜치 `hotfix/player-first-tab`, 프론트만, 운영자 지시 · 비교 아티팩트로 결정): **유메미타 플레이어 — 첫 탭 · 스크롤 없는 재생 바 · 오마카세 🎁 버튼 · 재생목록 탭 순번.** 기존 플레이어 UI 를 고친 정도라 일반 패치. 머지 커밋 `9de29ab`(PR #155, 2026-11-11 11:21) · Vercel 자동 배포 · 운영 `config.js` v4.11.12 · `player.js` `swapQTab` · `fitMarquee` 확인. 롤백 대상 = v4.11.11 병합 `766393e`. 병합 뒤 `feat/bg-dome` 을 시험 병합(푸시 안 함) — 충돌 없음 · selfcheck 27종 통과 · 폰 390 · PC 1280 헤드리스 스모크(페이지 오류 0, 플레이어 첫 탭 · 탭 배지 · 재생 바 스크롤 없음 · `#bgdeco` 있음).
   - 첫 진입 탭 = 1번째 탭(모바일 「재생 바」, PC 「곡 찾기」). 전엔 `st.tab` 초기값이 `songs` 라 모바일이 2번째 탭으로 시작했다.
   - 모바일 재생 바 탭은 스크롤하지 않는다(`.mp-play` `overflow:hidden`). 다음 곡은 화면 높이에 맞춰 3 → 1줄(`fitNext`), 1줄로도 넘치면 여백 · 간격만 줄인다(`.is-tight`, 글자 크기 그대로). 첫 줄 제목이 길면 무한 marquee(`fitMarquee`), 둘째 줄부터는 말줄임. 다음 곡 머리줄(「다음 곡 · 재생목록 n/m」)은 없앴다.

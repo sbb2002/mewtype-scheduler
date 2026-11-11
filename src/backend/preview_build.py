@@ -259,7 +259,9 @@ def build_preview(
             else:
                 continue  # live_state="none" 은 처리 안 함 (이미 archive 됨)
 
-        # 신규/upcoming→announced 승격 (정보 충족도)
+        # Keep confirmed premiere metadata after the API reports a completed video.
+        item["is_premiere"] = bool(getattr(video, "is_premiere", False) or item.get("is_premiere", False))
+
         if item["state"] == "announced":
             promoted = preview.promote_state(item)
             if promoted != item["state"]:
@@ -505,6 +507,15 @@ if __name__ == "__main__":
     assert item["state"] in ("announced", "upcoming"), f"Expected announced/upcoming, got {item['state']}"
     assert item["video_id"] == "vid_up"
     assert item["title"] == "Test Upcoming"
+    assert item["is_premiere"] is False
+    videos["vid_up"].is_premiere = True
+    prem, *_ = build_preview(channels_cfg, videos, prev_preview, now_iso)
+    assert prem["items"][0]["is_premiere"] is True
+    updated, *_ = build_preview(channels_cfg, videos, new_preview, now_iso)
+    assert updated["items"][0]["is_premiere"] is True
+    videos["vid_up"].is_premiere = False
+    retained, *_ = build_preview(channels_cfg, videos, prem, now_iso)
+    assert retained["items"][0]["is_premiere"] is True
     # wakes 는 announced 이면 watching 진입 예약되지 않음
     print(f"  item state: {item['state']}, scheduled 1h away (watching check scheduled in FSM)")
 

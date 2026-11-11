@@ -149,6 +149,7 @@ config/channels.json   # 채널 단일 소스 — channel_order(5인) · channel
       "collab_with": null,                  // 합동이면 참여 channel_key 배열(주 레인 제외). 렌더가 union 레인 팬아웃
       "host": null,                         // "group" = 5인 전원 합동(出演情報 텍스트 또는 그룹 채널 API 감지) → supersede 면제
       "kind": null,                         // "collab" | 카테고리(game/song/talk/…) | null
+      "is_premiere": false,                // Premiere: yellow card/timetable border and PREMIERE thumbnail badge; missing = false
       "membership": false,                  // true = 회원전용. watching 스킵, 시작 신호→live 직행, API 확인 안 함
 
       "title": "【チラズアート】…",           // JP 원문. announced 단계엔 null 가능

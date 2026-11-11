@@ -120,6 +120,7 @@ def make_item(
     item["host"] = fields.get("host")
     item["kind"] = fields.get("kind")
     item["membership"] = fields.get("membership", False)
+    item["is_premiere"] = fields.get("is_premiere", False)
     item["title"] = fields.get("title")
     item["title_ko"] = fields.get("title_ko")
     item["needs_tl"] = fields.get("needs_tl", bool(fields.get("title")) and not fields.get("title_ko"))
