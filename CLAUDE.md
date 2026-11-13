@@ -141,10 +141,11 @@ src/
       longcopy.js      # 카드 · 블록 · 점을 길게 눌러 주소 복사 · 첫 안내 말풍선
       netrecover.js    # 조회 실패 복구 상태 기계 — 재시도 뒤에도 실패하면 화면 중앙 안내
       bgdeco.js bglogic.js   # 배경 장식 — 분홍 → 파랑 톤 + 떠다니는 로고 도형 · 폰 흔들면 흩어짐(bglogic = 순수 로직 · 물리, css/bgdeco.css)
-      bgpeek.js bggyro.js bgdomegl.js bgtier.js   # 배경 보기(UFO 돔) — 튕겨 열기 · 자이로 · WebGL2 돔 장면(월면 · 가속 연출 · 해금 연결 전부). 성능 등급 high·low(bgtier.js 순수 판정, 11-10). 상세 SPEC 「배경 보기 UFO 돔」
+      bgpeek.js bggyro.js bgdomegl.js bgtier.js   # 배경 보기(UFO 돔) — 튕겨 열기 · 자이로 · WebGL2 돔 장면(월면 · 가속 연출 · 해금 연결 전부). 성능 등급 high·low(bgtier.js 순수 판정 — 매 방문 측정 · low 뒤 재시험, 저장 안 함, 11-13). 상세 SPEC 「배경 보기 UFO 돔」
       bglive.js          # 돔 바닥 라이브 조명 — 조명 0~4 = channel_order 순서 ↔ 멤버 5명, 라이브 판정(state live) · 맥동 순수 로직 + 마지막 값(11-10)
       bgpanel.js bggear.js bgwarp.js bgsound.js   # 조작 패널 · 워프 기어 패널 · 속도 모형(순수) · 소리
       bgunlock.js bghud.js bghudlogic.js bgfx.js   # 해금 규칙(순수) · 시선 HUD · HUD 계산(순수) · 가끔 나오는 YMMT · UFO
+      bgmusic.js       # 유메미타 플레이어 곡 → 돔(음악 테두리 · 솔로 곡 별자리 힌트) — player.js 의 mew:player-state 를 듣는다(bg-dome 시나리오)
       monitormines.js monitorminesui.js monitorbirthday.js   # 모니터링 페이지 지뢰찾기(모두 열기) · 방향 모으기
       birthdayui.js birthday.js   # KST 생일 판정 · 유리 패널 · 🎂 끌기 · 음악 인트로 수명 관리
       bdayscene-yuno.js bdaysign.js bdaylogic.js   # 정본 v12 Canvas 장면과 일출·조명 인트로 · 인코딩 사인 · 순수 계산

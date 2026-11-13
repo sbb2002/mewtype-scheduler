@@ -227,8 +227,14 @@ export function createHud({ onLock, onZoom }) {
         const n = t.lines.length * on;
         t.lines.forEach(([a, b], i) => { if (i >= n || !P[a] || !P[b]) return; const f = Math.min(1, n - i); g.beginPath(); g.moveTo(P[a][0], P[a][1]); g.lineTo(P[a][0] + (P[b][0] - P[a][0]) * f, P[a][1] + (P[b][1] - P[a][1]) * f); g.stroke(); });
       }
-      const sk = Math.pow(k, 0.5);
-      for (const q of P) { if (!q) continue; glow(q[0], q[1], 4.5 * sk * unit, "rgba(190,215,255,.45)"); g.fillStyle = "#fff"; g.beginPath(); g.arc(q[0], q[1], 0.7 * sk * unit, 0, 7); g.fill(); }
+      // (bg-dome 시나리오) 솔로 곡 힌트 — t.hint = 멤버 색("r,g,b"). 못 찾은 별자리의 선이 멤버 색으로 옅게 숨 쉬고 별빛도 그 색(bgmusic.js · bgdomegl.js hudTargets)
+      if (t.hint && on === 0) {
+        const br = REDUCE.matches ? 0.3 : 0.18 + 0.16 * (0.5 - 0.5 * Math.cos(now / 1100));
+        g.strokeStyle = `rgba(${t.hint},${br.toFixed(3)})`; g.lineWidth = 0.7 * unit; g.lineCap = "round";
+        t.lines.forEach(([a, b]) => { if (!P[a] || !P[b]) return; g.beginPath(); g.moveTo(P[a][0], P[a][1]); g.lineTo(P[b][0], P[b][1]); g.stroke(); });
+      }
+      const sk = Math.pow(k, 0.5), starGlow = t.hint && !t.found ? `rgba(${t.hint},.5)` : "rgba(190,215,255,.45)";
+      for (const q of P) { if (!q) continue; glow(q[0], q[1], 4.5 * sk * unit, starGlow); g.fillStyle = "#fff"; g.beginPath(); g.arc(q[0], q[1], 0.7 * sk * unit, 0, 7); g.fill(); }
     }
   }
 
