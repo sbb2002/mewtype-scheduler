@@ -2724,6 +2724,10 @@ export function createDomeGL(host, isPaused) {
     }
   }
 
+  // (실험 브랜치 bg-dome-claude-test 전용 · main 병합 금지) 시선 튐 조사 — ?debug=True 면 센서 원천 · 화면 시선을 기록하고 오른쪽 아래 「튐」 버튼을 띄운다(bggazelog.js)
+  if (/^(true|1)$/i.test(new URLSearchParams(window.location.search).get("debug") || "")) {
+    import("./bggazelog.js").then((m) => m.startGazeLog(() => ({ yaw, pitch, tele }))).catch((e) => console.error("[gazelog]", e));
+  }
   // 확인용(?bgdebug) — 콘솔에서 보는 방향 · 섞임 상태를 읽는다
   if (new URLSearchParams(window.location.search).has("bgdebug")) {
     // 폰에서 3초마다 상태를 경고 로그로 남긴다(확인용 서버의 오류 비콘이 PC 로 넘긴다)

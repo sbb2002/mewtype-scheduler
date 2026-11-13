@@ -13,6 +13,7 @@
 
 import { outdoorSite } from "./bgsite.js";
 import { declinationRad } from "./bgmag.js";
+import { createYawFix } from "./bgyawfix.js";
 
 const DEG = Math.PI / 180;
 const YAW_FREEZE = 78 * DEG;   // 폰을 거의 눕히거나 세워 하늘 · 바닥을 수직으로 보면 좌우 방향이 정의되지 않아 흔들린다 → 그 동안은 좌우를 붙잡아 둔다
@@ -27,8 +28,14 @@ const lastAt = { sensor: -1e9, event: -1e9, ios: -1e9, flag: -1e9 };
 // 확인용 — 어떤 원천이 몇 번 왔고 마지막 값이 무엇인지(bgdomegl.js 가 ?bgdebug 일 때 콘솔에 3초마다 찍는다)
 export const gyroDebug = {
   orient: 0, absolute: 0, compass: 0, absFlag: 0, sensor: 0, sensorErr: null,
-  src: null, decl: null, last: null, lastAbs: null,
+  src: null, decl: null, last: null, lastAbs: null, rel: 0, relErr: null,
 };
+
+// (실험 브랜치 bg-dome-claude-test) 움직임 연동 방위 보정 — 절대 방위 센서(sensor)와 상대 방위 센서가 둘 다 올 때만 화면 방위를 bgyawfix 로 바꾼다.
+// 주소에 ?yawfix=0 이면 끈다(지금 방식과 비교용). 설계 = devpapers ref/bg-dome/gaze-jump-lit/METHOD.md
+const YAWFIX_ON = typeof location === "undefined" || !/[?&]yawfix=0(&|$)/.test(location.search);
+export const yawFix = createYawFix();
+let relAt = -1e9;
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
@@ -110,13 +117,43 @@ function startSensor() {
     s.addEventListener("reading", () => {
       if (!s.quaternion) return;
       gyroDebug.sensor++;
-      takeAbsolute(forwardOfQuat(s.quaternion), "sensor");
+      const f = forwardOfQuat(s.quaternion);
+      takeAbsolute(f, "sensor");
+      const p = Math.asin(Math.max(-1, Math.min(1, f[2])));
+      yawFix.onAbs(s.timestamp ?? now(), Math.atan2(f[0], f[1]), Math.abs(p) >= YAW_FREEZE);
     });
     s.addEventListener("error", (e) => { gyroDebug.sensorErr = (e && e.error && e.error.name) || "error"; });
     s.start();
   } catch (err) {
     gyroDebug.sensorErr = (err && err.name) || "throw";
   }
+  if (YAWFIX_ON) startRelSensor();
+}
+
+/** 상대 방위 센서(자력계 없음) — 움직임 연동 방위 보정의 화면 구동 */
+function startRelSensor() {
+  const ROS = window.RelativeOrientationSensor;
+  if (typeof ROS !== "function") { gyroDebug.relErr = "none"; return; }
+  try {
+    const s = new ROS({ frequency: 60, referenceFrame: "device" });
+    s.addEventListener("reading", () => {
+      if (!s.quaternion) return;
+      gyroDebug.rel++;
+      relAt = now();
+      const f = forwardOfQuat(s.quaternion);
+      const p = Math.asin(Math.max(-1, Math.min(1, f[2])));
+      yawFix.onRel(s.timestamp ?? relAt, Math.atan2(f[0], f[1]), Math.abs(p) >= YAW_FREEZE);
+    });
+    s.addEventListener("error", (e) => { gyroDebug.relErr = (e && e.error && e.error.name) || "error"; });
+    s.start();
+  } catch (err) {
+    gyroDebug.relErr = (err && err.name) || "throw";
+  }
+}
+
+/** 지금 화면 방위가 보정기를 쓰는지 — 절대 원천이 sensor 이고 상대 센서 값이 최근에 왔고 보정기가 맞춰졌을 때 */
+export function yawFixActive() {
+  return YAWFIX_ON && gyroDebug.src === "sensor" && now() - relAt < FRESH_MS && yawFix.yaw() != null;
 }
 
 /** 바깥 보기용 절대 방위 듣기 시작 */
@@ -149,7 +186,11 @@ export const declinationDeg = () => (outdoorSite() ? declination() / DEG : null)
 try { localStorage.removeItem("bgheading"); localStorage.removeItem("bgheading2"); } catch { /* 저장소 없음 */ }
 
 /** 보는 방향의 실제 방위 { yaw: 진북 = 0 · 동 = +π/2, pitch } (편각 포함) — 나침반 값이 아직 없으면 null */
-export function gyroAbs() { return absHave ? { yaw: wrap(absYaw + declination()), pitch: absPitch } : null; }
+export function gyroAbs() {
+  if (!absHave) return null;
+  const y = yawFixActive() ? yawFix.yaw() : absYaw;
+  return { yaw: wrap(y + declination()), pitch: absPitch };
+}
 
 /** 지금 폰 자세를 새 기준(정면)으로 삼는다 */
 export function rebase() { baseYaw = yawAcc; basePitch = rawPitch; }
