@@ -217,9 +217,10 @@ uniform mat3 uEqM;
 uniform vec3 uSkyBase; uniform float uGridA, uReflA;
 uniform vec3 uFloorIn, uFloorOut, uPad, uGlow, uRim;
 uniform float uFloorRefl, uLightK;
+uniform float uBeamH;   // (11-13 운영자) 빛기둥 높이 — 테마마다(THEMES.beamH, 다크는 대폭 낮춤)
 // (bg-dome, 11-10) 라이브 조명: 조명 i 의 멤버 색(uLiveCol[i]) · 섞는 비율(uLiveK[i], 0 = 평소 uPad·uGlow 그대로)
 uniform vec3 uLiveCol[5]; uniform float uLiveK[5];
-// (11-13 운영자 「방송 중이 아니면 라이트를 좀 더 투명하게」) 조명 i 의 밝기 배율 — 라이브 = 1, 아니면 LIGHT_IDLE(경보 중엔 1 로 올라감)
+// (11-13 운영자 「방송 중이 아니면 라이트를 좀 더 투명하게」 · 「방송 중은 더 진하게」) 조명 i 의 밝기 배율 — 라이브 = LIGHT_LIVE, 아니면 LIGHT_IDLE(경보 중엔 1 로)
 uniform float uLiveA[5];
 out vec4 outColor;
 const float TAU = 6.2831853, D = 0.01745329;
@@ -962,7 +963,7 @@ void main() {
   }
 
   // 빛기둥은 시선과 유한 원통의 교차 구간만 계산한다. 바닥/돔 뒤쪽은 잘라 낸다.
-  const float beamH = 0.58, beamR = 0.105;
+  float beamH = uBeamH; const float beamR = 0.105;
   float dy = (d.y < 0.0 ? -1.0 : 1.0) * max(abs(d.y), 1e-4);
   vec2 slab = vec2(-E.y, beamH - E.y) / dy;
   float sceneT = q.y < 0.0 ? tf : length(q - E);
@@ -1187,6 +1188,7 @@ const THEMES = {
     skyBase: hex("#702747"), gridA: 0.23, reflA: 0.045,
     floorIn: hex("#262337"), floorOut: hex("#101320"),
     pad: hex("#fff0d7"), glow: hex("#b39ce8"), rim: hex("#a5a1bf"), floorRefl: 0.75, lightK: 0.9,
+    beamH: 0.16,   // (11-13 운영자 「다크모드일 때는 빛 기둥의 높이를 대폭 줄여줘. 단 라이트 색은 보일 정도」) 0.58 → 0.16
   },
   light: {
     skyM: mul(bright(1.12), mul(hue(344), sat(0.9))), skyO: [0, 0, 0],
@@ -1194,6 +1196,7 @@ const THEMES = {
     skyBase: hex("#f6a8c4"), gridA: 0.54, reflA: 0.09,
     floorIn: hex("#3a344e"), floorOut: hex("#202334"),
     pad: hex("#fff3df"), glow: hex("#c4adee"), rim: hex("#c4b6cf"), floorRefl: 1.0, lightK: 1,
+    beamH: 0.58,
   },
 };
 
@@ -1228,7 +1231,9 @@ function memberHex() {
 const memberHexReset = () => { memberHexCache = null; };
 // (bg-dome, 11-10) 라이브 조명 색 — 키 → 셰이더 uLiveCol 용 0~1 값(THEMES 의 hex 와 같은 방식). 키 없음 = 검정(어차피 uLiveK 0)
 const liveRGB = (key) => { const c = key && memberHex()[key]; return c ? hex(c) : [0, 0, 0]; };
-const LIGHT_IDLE = 0.4;   // (11-13) 방송 중이 아닌 조명의 밝기 배율
+const LIGHT_IDLE = 0.2;   // (11-13) 방송 중이 아닌 조명의 밝기 배율(0.4 → 0.2, 운영자 「투명도를 더 올려」)
+const LIGHT_LIVE = 1.3;   // (11-13) 방송 중인 조명의 밝기 배율(운영자 「조금 더 진하게」)
+const LIVE_MIN = 0.55;    // (11-13) 방송 중 맥동의 바닥 — 흰 평소 색까지 빠지지 않고 멤버 색이 늘 남는다(0 → 0.55)
 
 // ── 공중 무늬(콘의 파스텔 외곽선 장식에서 모양 규칙만 따왔다) ──
 const NS = "http://www.w3.org/2000/svg";
@@ -1717,8 +1722,8 @@ export function createDomeGL(host, isPaused) {
     for (let i = 0; i < 5; i++) {
       const s = slots[i] || { key: null, live: false };
       liveCol.set(liveRGB(s.key), i * 3);
-      liveK[i] = s.live ? (1 - alarmK) * k : 0;
-      liveA[i] = s.live ? 1 : LIGHT_IDLE + (1 - LIGHT_IDLE) * alarmK;   // 경보(빨강)는 다섯 개 모두 밝게
+      liveK[i] = s.live ? (1 - alarmK) * (LIVE_MIN + (1 - LIVE_MIN) * k) : 0;
+      liveA[i] = s.live ? LIGHT_LIVE + (1 - LIGHT_LIVE) * alarmK : LIGHT_IDLE + (1 - LIGHT_IDLE) * alarmK;   // 경보(빨강)는 다섯 개 모두 밝게
     }
     gl.uniform3fv(U["uLiveCol[0]"], liveCol); gl.uniform1fv(U["uLiveK[0]"], liveK); gl.uniform1fv(U["uLiveA[0]"], liveA);
   }
@@ -2309,7 +2314,7 @@ export function createDomeGL(host, isPaused) {
     slotA = slotB = null;   // 낮 한 벌의 색 보정이 테마마다 달라 다시 건다
     gl.uniform3fv(U.uSkyBase, t.skyBase); gl.uniform1f(U.uGridA, t.gridA); gl.uniform1f(U.uReflA, t.reflA);
     for (const k of ["floorIn", "floorOut", "pad", "glow", "rim"]) gl.uniform3fv(U["u" + k[0].toUpperCase() + k.slice(1)], t[k]);
-    gl.uniform1f(U.uFloorRefl, t.floorRefl); gl.uniform1f(U.uLightK, t.lightK);
+    gl.uniform1f(U.uFloorRefl, t.floorRefl); gl.uniform1f(U.uLightK, t.lightK); gl.uniform1f(U.uBeamH, t.beamH);
     lastGL = 0;
   }
 
