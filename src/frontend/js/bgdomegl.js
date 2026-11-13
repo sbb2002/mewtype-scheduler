@@ -12,7 +12,7 @@
 
 import { gyroView, startAbsolute, gyroAbs, gyroDebug, gyroTilt } from "./bggyro.js";
 import { BGVIEW_EVENT, BGINDOOR_EVENT, indoorBg, setIndoorBg, setBgView, chooseBgView } from "./bgview.js";
-import { resolveTier, judge, readStoredTier, writeStoredTier, clearStoredTier } from "./bgtier.js";
+import { resolveTier, createTierMeter, clearStoredTier } from "./bgtier.js";
 import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial, refraction } from "./bgastro.js";
 
@@ -1313,12 +1313,12 @@ export function createDomeGL(host, isPaused) {
   let yaw = 0, pitch = BASE_PITCH, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
   let zoomR = 0, zoomT = 0, zoomPath = 0, tele = 1, drawnTele = NaN, drawnR = NaN, drawnRoll = NaN, pinch = null, moonTex = null;   // 줌(뒤로 물러선 거리) — 지금 값 · 목표 · 마지막으로 그린 값 · 두 손가락 시작 상태
   let raf = 0, stopped = true, lastShake = 0, theme = null, t0 = performance.now();
-  // (bg-dome, 11-10) 성능 등급 — 주소(?bgtier) → 이 기기에 기억한 값 → 없으면 high 로 시작하고 배경 보기 중 실측(measuring). 순수 판정은 bgtier.js
-  if (QS.get("bgtier") === "reset") clearStoredTier();
-  const tierPick = resolveTier(window.location.search, readStoredTier());
-  let tier = tierPick.tier, measuring = tierPick.measure;
-  let tierSamples = [], tierLastT = 0;   // 실측 표본(rAF 간격 ms) · 직전 rAF 시각
-  const isLow = () => tier === "low";
+  // (bg-dome, 11-10) 성능 등급 — (11-13 운영자) 들어올 때마다 high 로 시작해 배경 보기 중 계속 잰다. low 가 돼도 재시험으로 high 로 돌아올 수 있다.
+  // 주소 ?bgtier=low|high 면 고정(확인용). 기기 저장은 하지 않고 옛 저장값은 지운다. 순수 판정 · 재시험 규칙은 bgtier.js
+  clearStoredTier();
+  const tierPick = resolveTier(window.location.search);
+  const tierMeter = createTierMeter(tierPick.tier, tierPick.fixed);
+  const isLow = () => tierMeter.tier === "low";
   const frameGap = (peek) => 1000 / (isLow() ? 30 : peek ? 60 : 30);   // (bg-dome, 11-10) 화면 갱신 간격 — 낮은 등급은 배경 보기도 30fps
   // 장면 +z = 북, +x = 동. 바깥 보기 = 실제 시각 · 위치의 하늘(해 · 달 · 별 · 방위 글자). 시선은 두 보기가 같다
   let outdoor = false;
@@ -2606,18 +2606,12 @@ export function createDomeGL(host, isPaused) {
     tPrev = lastFrame = performance.now();
     raf = requestAnimationFrame(frame);
   }
-  // (bg-dome, 11-10) 성능 실측 — 등급이 아직 없을 때만, 배경 보기 중 · 탭이 보일 때의 rAF 간격을 모은다. 판정 뒤엔 저장하고 등급을 적용한다
+  // (bg-dome, 11-10 · 11-13) 성능 실측 — 배경 보기 중 · 탭이 보일 때의 rAF 간격을 bgtier.js 측정기에 넘긴다. 등급이 바뀌면 해상도 상한을 다시 맞춘다
   function measureTier(t) {
-    if (!measuring) return;
-    if (!document.documentElement.classList.contains("bg-peek") || document.hidden) { tierSamples = []; tierLastT = 0; return; }   // 배경 보기를 닫거나 탭이 가려지면 그 회차 표본은 버린다
-    if (tierLastT) tierSamples.push(t - tierLastT);
-    tierLastT = t;
-    const verdict = judge(tierSamples);
-    if (verdict == null) return;
-    measuring = false; tierSamples = [];
-    tier = verdict;
-    writeStoredTier(verdict);
-    if (isLow()) resize(window.innerWidth, window.innerHeight);   // 해상도 상한이 바뀌었으니 다시 맞춘다
+    const changed = tierMeter.tick(t, document.documentElement.classList.contains("bg-peek") && !document.hidden);
+    if (!changed) return;
+    resize(window.innerWidth, window.innerHeight);   // low = 해상도 1배, high = 원래대로
+    if (DEBUG) console.warn(`[bgtier] ${changed}${tierMeter.probing ? " (재시험)" : ""} · 이번 방문 ${tierMeter.changes}번째 바뀜`);
   }
 
   function frame(t) {
@@ -2743,7 +2737,7 @@ export function createDomeGL(host, isPaused) {
     }, 3000);
     window.__bgunlock = { get state() { return JSON.parse(JSON.stringify(unlockS)); }, get place() { return placeKey(); }, get hud() { return hud.debug; }, get targets() { return hudTargets(placeKey()).map((t) => ({ id: t.id, az: +(Math.atan2(t.dir[0], t.dir[2]) / DEG).toFixed(1), alt: +(Math.asin(t.dir[1]) / DEG).toFixed(1) })); } };
     window.__bglive = (keys) => { forceLive(keys); liveDirty = true; if (!raf) draw(); };   // (bg-dome, 11-10) 확인용 — 멤버 키 배열을 라이브로 강제(["yuno"]), null 이면 실제 데이터
-    window.__bgtier = { get tier() { return tier; }, get measuring() { return measuring; }, get samples() { return tierSamples.length; } };   // (bg-dome, 11-10) 확인용 — 지금 등급 · 실측 중 · 표본 수
+    window.__bgtier = { get tier() { return tierMeter.tier; }, get measuring() { return tierMeter.measuring; }, get probing() { return tierMeter.probing; }, get probeIn() { return tierMeter.probeIn; }, get samples() { return tierMeter.samples; }, get changes() { return tierMeter.changes; } };   // (bg-dome, 11-10 · 11-13) 확인용 — 지금 등급 · 실측 중 · 재시험 중 · 다음 재시험까지(ms) · 표본 수 · 바뀐 횟수
     window.__bggear = (i) => { if (!star) startStar(); shiftGear(star.st, i); return { fovK, pullK, blurK, kick: fxKick }; };   // 확인용 — 성간 이동을 시작하고 기어를 바꿈
     window.__bgfx = () => ({ fovK, pullK, blurK, kick: fxKick, beta: star ? star.st.beta : null });
     window.__bgplaceAz = () => lastPhotoAz;
