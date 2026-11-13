@@ -24,7 +24,7 @@ import { loadUnlock, saveUnlock, has as unlocked, chooserItems, randomDest, arri
 import { createHud } from "./bghud.js";
 import { dirFromAzAlt, toSpace, toDome, aimSpace, sepDeg, photoDir, moonFrame, levelSpace } from "./bghudlogic.js";
 import { createFx } from "./bgfx.js";
-import { MEMBER_LIGHT_COLORS, FALLBACK_CHANNEL_ORDER } from "./config.js";
+import { MEMBER_LIGHT_COLORS, MEMBER_DOT_COLORS, FALLBACK_CHANNEL_ORDER } from "./config.js";
 import { createMusicRim, soloOf, rgbOf } from "./bgmusic.js";
 import { lastLive, pulse, forceLive } from "./bglive.js";   // (bg-dome, 11-10) 돔 바닥 라이브 조명
 import * as sound from "./bgsound.js";
@@ -219,6 +219,8 @@ uniform vec3 uFloorIn, uFloorOut, uPad, uGlow, uRim;
 uniform float uFloorRefl, uLightK;
 // (bg-dome, 11-10) 라이브 조명: 조명 i 의 멤버 색(uLiveCol[i]) · 섞는 비율(uLiveK[i], 0 = 평소 uPad·uGlow 그대로)
 uniform vec3 uLiveCol[5]; uniform float uLiveK[5];
+// (11-13 운영자 「방송 중이 아니면 라이트를 좀 더 투명하게」) 조명 i 의 밝기 배율 — 라이브 = 1, 아니면 LIGHT_IDLE(경보 중엔 1 로 올라감)
+uniform float uLiveA[5];
 out vec4 outColor;
 const float TAU = 6.2831853, D = 0.01745329;
 uniform vec3 E;   // 눈 위치 = EYE(줌으로 움직인다)
@@ -978,8 +980,8 @@ void main() {
 
     // (bg-dome, 11-10) 조명 i 의 색. 조명 배치: a = i·72° + 0.31rad, 위치 (sin a, cos a)·0.42 → 0번 = +z 쪽(장면 북 · 기본 시선 정면)에 가장 가깝고,
     //   i 가 커질수록 위에서 본 시계 방향(+x = 동). 라이브 멤버 색은 uLiveK[i] = 0 이면 평소 색과 픽셀 단위로 같다.
-    vec3 padI = mix(uPad, uLiveCol[i], uLiveK[i]);
-    vec3 glowI = mix(uGlow, uLiveCol[i], uLiveK[i]);
+    vec3 padI = mix(uPad, uLiveCol[i], uLiveK[i]) * uLiveA[i];
+    vec3 glowI = mix(uGlow, uLiveCol[i], uLiveK[i]) * uLiveA[i];
 
     // 도함수는 위에서 구해 두므로 하늘 픽셀의 바닥 재질 계산은 생략해도 안전하다.
     if (floorK > 0.0) {
@@ -1195,8 +1197,38 @@ const THEMES = {
   },
 };
 
+// (11-13 운영자 「라이트 조명 색을 테이블의 점 색깔로」) 돔의 멤버 색(라이브 조명 · 별빛 조명 · 음악 테두리 · 별자리 힌트) = 타임테이블 예고 점과 같은 색.
+//   점과 같은 규칙(timetable.js fillDot · css/timetable.css .wk2__seg): MEMBER_DOT_COLORS 의 어둡게 / 밝게 값을 지금 테마로 고르고,
+//   표에 없는 멤버(아라레)는 그 레인의 --lane-color(아바타 평균색, render.js). 레인 색이 아직 없으면(아바타 전) config.js MEMBER_LIGHT_COLORS 로 대신한다.
+//   테마 · 라이브 데이터가 바뀌면 다시 읽는다(memberHexReset).
+let memberHexCache = null, colorProbe = null, memberRetry = null;   // memberRetry = 대신 색을 쓴 경우 잠시 뒤 다시 읽을 함수(장면이 정한다)
+function cssHex(v) {
+  if (!v || typeof document === "undefined") return null;
+  if (!colorProbe) { colorProbe = document.createElement("i"); colorProbe.style.display = "none"; document.body.appendChild(colorProbe); }
+  colorProbe.style.color = ""; colorProbe.style.color = v;
+  const m = /rgba?\((\d+)[ ,]+(\d+)[ ,]+(\d+)/.exec(getComputedStyle(colorProbe).color);
+  return m ? "#" + [m[1], m[2], m[3]].map((x) => (+x).toString(16).padStart(2, "0")).join("") : null;
+}
+function memberHex() {
+  if (memberHexCache) return memberHexCache;
+  const light = document.documentElement.getAttribute("data-theme") === "light", out = {};
+  let partial = false;
+  const border = cssHex(getComputedStyle(document.documentElement).getPropertyValue("--color-border").trim());
+  for (const k of FALLBACK_CHANNEL_ORDER) {
+    const dc = MEMBER_DOT_COLORS[k];
+    if (dc) { out[k] = light ? dc.light : dc.dark; continue; }
+    const lane = document.querySelector(`#board .lane[data-channel="${k}"]`);
+    const c = lane ? cssHex(getComputedStyle(lane).getPropertyValue("--lane-color").trim()) : null;
+    if (c && c !== border) out[k] = c;
+    else { out[k] = MEMBER_LIGHT_COLORS[k]; partial = true; }   // 아바타 평균색을 아직 못 뽑았으면(테두리 색 그대로) 대신 색 — 잠시 뒤 다시 읽는다
+  }
+  if (partial && memberRetry) memberRetry();
+  return (memberHexCache = out);
+}
+const memberHexReset = () => { memberHexCache = null; };
 // (bg-dome, 11-10) 라이브 조명 색 — 키 → 셰이더 uLiveCol 용 0~1 값(THEMES 의 hex 와 같은 방식). 키 없음 = 검정(어차피 uLiveK 0)
-const liveRGB = (key) => (key && MEMBER_LIGHT_COLORS[key] ? hex(MEMBER_LIGHT_COLORS[key]) : [0, 0, 0]);
+const liveRGB = (key) => { const c = key && memberHex()[key]; return c ? hex(c) : [0, 0, 0]; };
+const LIGHT_IDLE = 0.4;   // (11-13) 방송 중이 아닌 조명의 밝기 배율
 
 // ── 공중 무늬(콘의 파스텔 외곽선 장식에서 모양 규칙만 따왔다) ──
 const NS = "http://www.w3.org/2000/svg";
@@ -1561,12 +1593,12 @@ export function createDomeGL(host, isPaused) {
       if (t.sS) t.stars = t.sS.map((x) => toDome(spaceRot, x)); else if (t.S) t.stars = t.S;
       t.found = unlockS.found.includes(t.id);
       // (시나리오) 솔로 곡이 흐르면 그 멤버의 탄생 별자리가 멤버 색으로 옅게 떠오른다 — 아직 못 찾은 것만(찾기 힌트, bghud.js zod)
-      if (t.zod) { const solo = soloOf(musicRim.music); t.hint = !t.found && solo && solo === t.key ? rgbOf(MEMBER_LIGHT_COLORS[solo]) : null; }
+      if (t.zod) { const solo = soloOf(musicRim.music); t.hint = !t.found && solo && solo === t.key ? rgbOf(memberHex()[solo]) : null; }
     }
     return set;
   }
-  const life = new AbortController();
-  const musicRim = createMusicRim(MEMBER_LIGHT_COLORS, life.signal);   // (시나리오) 음악 테두리 · 별자리 힌트(bgmusic.js)   // 테마를 바꿔 장면을 없앨 때(destroy) 문서 · 창 리스너를 한꺼번에 뗀다
+  const life = new AbortController();   // 테마를 바꿔 장면을 없앨 때(destroy) 문서 · 창 리스너를 한꺼번에 뗀다
+  const musicRim = createMusicRim(memberHex, life.signal);   // (시나리오) 음악 테두리 · 별자리 힌트(bgmusic.js) — 색은 타임테이블 점 색(memberHex)
   // 패널에서 고르기(2단계): 버츄얼 스페이스 · 초행성X = 실내 배경, 지구 = 바깥 보기(위치 권한 — 거절 · 실패면 지금 배경에 남는다)
   // (11-06 운영자) 하늘은 「돔 재투영」으로 바뀐다(아래 beginSky — 두 이벤트 듣기에서 바꾸기 직전에 시작).
   // 초행성X 는 우주 사진을 다 받은 뒤에 시작한다 — 안 그러면 빈 하늘이 맺혔다가 사진이 툭 나타난다(받는 동안 칸에 「불러오는 중…」, 길어야 4초).
@@ -1676,7 +1708,7 @@ export function createDomeGL(host, isPaused) {
   // (bg-dome, 11-10) 라이브 조명 — 멤버가 라이브면 그 바닥 조명만 멤버 색으로 맥동(bglive.js 의 값). 경보 빨강이 우선: alarmK 만큼 라이브 색을 뺀다.
   //   점멸 = high 등급 또는 배경 보기 중. 낮은 등급 + 예고보드 = 점멸 없이 멤버 색으로 켜 두기(다시 그리는 건 상태가 바뀔 때만).
   let liveDirty = true, liveDrawAt = -Infinity;
-  const liveCol = new Float32Array(15), liveK = new Float32Array(5);
+  const liveCol = new Float32Array(15), liveK = new Float32Array(5), liveA = new Float32Array(5);
   const liveAnimating = (peek) => !reducedMotion.matches && (!isLow() || peek) && (lastLive() || []).some((s) => s && s.live);
   function liveUniforms() {
     const slots = lastLive() || [];
@@ -1686,8 +1718,9 @@ export function createDomeGL(host, isPaused) {
       const s = slots[i] || { key: null, live: false };
       liveCol.set(liveRGB(s.key), i * 3);
       liveK[i] = s.live ? (1 - alarmK) * k : 0;
+      liveA[i] = s.live ? 1 : LIGHT_IDLE + (1 - LIGHT_IDLE) * alarmK;   // 경보(빨강)는 다섯 개 모두 밝게
     }
-    gl.uniform3fv(U["uLiveCol[0]"], liveCol); gl.uniform1fv(U["uLiveK[0]"], liveK);
+    gl.uniform3fv(U["uLiveCol[0]"], liveCol); gl.uniform1fv(U["uLiveK[0]"], liveK); gl.uniform1fv(U["uLiveA[0]"], liveA);
   }
   function floorLights() {
     if (!(alarmK > 0) && !alarmDrawn) return;
@@ -2534,7 +2567,8 @@ export function createDomeGL(host, isPaused) {
   //   아라레는 그 표에 없어(운영자 결정 — 아바타 평균색을 씀) 여기선 임시로 따뜻한 노랑 — 확인 필요.
   const starlight = document.createElement("div");
   starlight.className = "bg-starlight"; starlight.setAttribute("aria-hidden", "true");
-  FALLBACK_CHANNEL_ORDER.forEach((key, i) => starlight.style.setProperty(`--sl${i + 1}`, MEMBER_LIGHT_COLORS[key]));   // (bg-dome, 11-10) 색 표 = config.js MEMBER_LIGHT_COLORS (바닥 라이브 조명과 공유)
+  const paintStarlight = () => { const c = memberHex(); FALLBACK_CHANNEL_ORDER.forEach((key, i) => starlight.style.setProperty(`--sl${i + 1}`, c[key])); };   // (11-13) 색 = 타임테이블 점 색(memberHex — 바닥 라이브 조명과 공유)
+  paintStarlight();
   document.body.appendChild(starlight);
   let starlightOn = null;
   function updateStarlight(peek) {
@@ -2676,10 +2710,14 @@ export function createDomeGL(host, isPaused) {
     syncLoop();   // 낮은 등급 · 예고보드 상태에서도 하늘 전환이 끝까지 돌도록
   }, { signal: life.signal });
   // (bg-dome, 11-10) 라이브 멤버가 바뀌면(main.js poll → bglive.js publishLive) 다음 그림에 반영 — 쉬는 낮은 등급이면 바로 한 번 그린다
-  document.addEventListener("bg:live", () => { liveDirty = true; redrawIfResting(); }, { signal: life.signal });
-  const themeObs = new MutationObserver(() => { draw(); syncLoop(); }); themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  // (11-13) 멤버 색 다시 읽기 — 테마가 바뀌거나(점 색 어둡게 ↔ 밝게) 새 데이터가 오면(아라레 레인 색이 그 사이 뽑혔을 수 있다)
+  const recolor = () => { memberHexReset(); paintStarlight(); musicRim.refresh(); liveDirty = true; };
+  let retryT = 0;
+  memberRetry = () => { if (!retryT) retryT = setTimeout(() => { retryT = 0; if (!stopped) { recolor(); redrawIfResting(); } }, 3000); };   // 레인 색이 생길 때까지 3초마다
+  document.addEventListener("bg:live", () => { recolor(); redrawIfResting(); }, { signal: life.signal });
+  const themeObs = new MutationObserver(() => { recolor(); draw(); syncLoop(); }); themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   // (bg-dome, 11-10) 배경 보기 진입 · 해제(클래스 변화) — 낮은 등급이 쉬고 있었으면 다시 돌리고, 나가면 다음 프레임에서 마지막 한 번 맞춘 뒤 쉰다
-  const peekObs = new MutationObserver(() => syncLoop()); peekObs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  const peekObs = new MutationObserver(() => { if (document.documentElement.classList.contains("bg-peek")) recolor(); syncLoop(); });   // (11-13) 배경 보기를 열 때 멤버 색도 다시 읽는다(아라레 레인 색은 아바타를 받은 뒤에야 생긴다) peekObs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
   function finishThemeMotion() { themeStart = -Infinity; draw(); }
   reducedMotion.addEventListener("change", finishThemeMotion);
 
@@ -2753,6 +2791,6 @@ export function createDomeGL(host, isPaused) {
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
     redraw() { draw(); },   // (bg-dome, 11-10) 정지 상태에서도 현재 자리를 한 번 그린다(낮은 등급 조명 색 바뀜 등)
-    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); hud.remove(); musicRim.remove(); fx.remove(); starlight.remove(); siren.remove(); life.abort(); themeObs.disconnect(); peekObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
+    destroy() { stop(); memberRetry = null; clearTimeout(retryT); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); hud.remove(); musicRim.remove(); fx.remove(); starlight.remove(); siren.remove(); life.abort(); themeObs.disconnect(); peekObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
   };
 }

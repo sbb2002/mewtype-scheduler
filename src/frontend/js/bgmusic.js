@@ -36,11 +36,12 @@ export function rgbOf(hex) {
 }
 
 /**
- * 돔 장면이 살아 있는 동안 음악 테두리를 둔다. colors = 멤버 색 표(config.js MEMBER_LIGHT_COLORS).
- * 돌려줌 = { get music() — 지금 상태 { on, members }, remove() }. signal(AbortSignal)이 끊기면 리스너도 뗀다.
+ * 돔 장면이 살아 있는 동안 음악 테두리를 둔다. colors = 멤버 색 표 { key: "#RRGGBB" } 또는 그 표를 돌려주는 함수(테마마다 달라지는 타임테이블 점 색 — bgdomegl.js memberHex).
+ * 돌려줌 = { get music() — 지금 상태 { on, members }, refresh() — 색이 바뀌었을 때 다시 칠하기, remove() }. signal(AbortSignal)이 끊기면 리스너도 뗀다.
  */
 export function createMusicRim(colors, signal) {
-  if (typeof document === "undefined") return { music: { on: false, members: [] }, remove() {} };
+  if (typeof document === "undefined") return { music: { on: false, members: [] }, refresh() {}, remove() {} };
+  const colorMap = () => (typeof colors === "function" ? colors() : colors);
   const el = document.createElement("div");
   el.className = "bg-music-rim";
   el.setAttribute("aria-hidden", "true");
@@ -50,12 +51,13 @@ export function createMusicRim(colors, signal) {
     const s = music.on ? music.members.join(",") : "";
     if (s === sig) return;
     sig = s;
-    if (s) el.style.setProperty("--rim", rimGradient(music.members, colors));
+    if (s) el.style.setProperty("--rim", rimGradient(music.members, colorMap()));
     el.classList.toggle("is-on", !!s);
   };
   document.addEventListener(PLAYER_STATE_EVENT, (e) => { music = nextMusic(music, e.detail); apply(); }, signal ? { signal } : undefined);
   return {
     get music() { return music; },
+    refresh() { sig = null; apply(); },   // 다음 apply 가 같은 멤버여도 다시 칠하게
     remove() { el.remove(); },
   };
 }
