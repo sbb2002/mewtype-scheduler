@@ -80,7 +80,9 @@ export function createHud({ onLock, onZoom }) {
   // (합집합 S11 · 피드백 P2-2) 가운데 각도 칸 = 챔퍼 채운 상자(CSS .hud-cell, 30 × 13) + 어두운 숫자 「040°」(9.5 · 700). 테이프 숫자 줄 한가운데. 방위 라벨은 없앰
   // (피드백 Q1-4) 칸 아래를 1.5 늘려 숫자 상자(테이프 y ~17.5)를 덮고, 글자는 칸 가운데(y 1.6)에 맞춘다
   const hdgCell = sv("path", { d: "M-13 -9H13L15 -7V3.5L13 5.5H-13L-15 3.5V-7Z", class: "hud-cell" });
-  const hdg = txt(0, 1.6, "000°", { a: "middle", s: 9.5, w: 700, c: "#06121c", ls: ".3", cls: "nostroke" });   // 셀 위 글자는 #06121c — hud-v 글로우 미적용
+  const hdg = txt(0, 1.6, "000", { a: "middle", s: 11, w: 800, c: "#06121c", ls: "0", cls: "nostroke" });   // 셀 위 글자는 #06121c — hud-v 글로우 미적용
+  hdg.setAttribute("textLength", "25");
+  hdg.setAttribute("lengthAdjust", "spacingAndGlyphs");
   const hdgG = sv("g", {}, [hdgCell, hdg]);
   // (피드백 Q1-5) 못 찾은 대상 마름모는 각도 칸 위에 그린다 — 테이프와 같은 좌표 · 같은 좌우 흐림 마스크
   const bcnG = sv("g", { mask: `url(#${clipId})` }, [bcn]);
@@ -112,7 +114,7 @@ export function createHud({ onLock, onZoom }) {
   // (제안 A-4 · B-1) 고도 · 배율 눈금은 짧게(104 단위), 라벨은 한글, 현재값은 숫자 칸을 넓혀 굵게
   // (합집합 S13 · S14 · S15 · S16) 레일 = 굵은 기준선 + 가는 눈금(큰 8 · 작은 4, 숫자 없음) · I 자 막대 포인터 · 현재값 하나만 크게 · 채운 구간
   // (피드백 P3-4 · P3-5) 현재값 9 · 포인터 11(고도 x 9 → 20, 배율 x 180 → 191) · 숫자 안쪽 이동 · 잔상 글자는 삭제
-  const altVal = txt(23, 3.5, "+00°", { s: 9, c: VAL, w: 700, cls: "hud-v" }), zmVal = txt(177, 3.5, "×01.0", { a: "end", s: 9, c: VAL, w: 700, cls: "hud-v" });
+  const altVal = txt(23, 3.5, "+00°", { s: 9, c: VAL, w: 700, cls: "hud-v" }), zmVal = txt(177, 3.5, "×1.0", { a: "end", s: 9, c: VAL, w: 700, cls: "hud-v" });
   // (합집합 S16) 채운 구간 — 시작 y 0 · 끝은 수평(고도) 또는 ×1 위치, set("alt" · "zm") 에서 갱신 · 굵은 선 1.4
   const altFill = sv("line", { x1: 14, x2: 14, y1: 0, y2: 0, stroke: CY, "stroke-width": 1.4, opacity: ".9" }), zmFill = sv("line", { x1: 186, x2: 186, y1: 0, y2: 0, stroke: CY, "stroke-width": 1.4, opacity: ".9" });
   // (피드백 P3-3) 레일 · 눈금 · 채운 구간은 위아래 끝에서 서서히 사라지게 — 세로 마스크(−52 투명 → −36 불투명 → 36 불투명 → 52 투명)
@@ -136,6 +138,7 @@ export function createHud({ onLock, onZoom }) {
   // (합집합 S18) 아래 줄 — 라벨 SKY · KST(4단계) · 하늘 이름(한글 8 · 600 · VAL) · 시각 HH:MM(8 · 600 · VAL · 글로우)
   const skyName = txt(14, 0, "", { s: 8, c: VAL, w: 600, cls: "ko" }), clock = txt(186, 0, "--:--", { a: "end", s: 8, c: VAL, w: 600, cls: "hud-v" });
   const foot = sv("g", {}, [txt(14, -12, "SKY", { s: 5, c: MID, cls: "lab" }), skyName, txt(186, -12, "KST", { a: "end", s: 5, c: MID, cls: "lab" }), clock]);
+  for (const part of [tapeWrap, hdgG, bcnG, sides]) part.classList.add("hud-adaptive");
   svg.append(tapeWrap, hdgG, bcnG, ring, reticle, sides, foot);   // (피드백 Q1-3) 그리는 순서: 테이프 → 각도 칸 → 대상 마름모
 
   // ── 정보 카드(F5 .pick) ──
@@ -147,9 +150,9 @@ export function createHud({ onLock, onZoom }) {
   root.append(card);
   // (11-09 운영자) 좌하단 맥박 신호 표시기 — 못 찾은 대상에 가까울수록 맥박이 빨라지고, 색은 빨강 → 주황 → 노랑 → 초록 → 파랑으로
   // (합집합 S25 · S26 · S27) 신호 = 라벨 SIGNAL · 분절 막대 5개 · 미니 파형 · 각도 3자리
-  const pulseDot = h("i"), pulseRing = h("b"), pulseRing2 = h("b"), pulseLbl = h("span", "bghud-sig__l", ["SIGNAL"]), pulseVal = h("span", "bghud-sig__v", ["---°"]);
+  const pulseDot = h("i"), pulseRing = h("b"), pulseRing2 = h("b"), pulseLbl = h("span", "bghud-sig__l", ["SIGNAL"]);
   const bars = Array.from({ length: 5 }, () => h("i")), barsEl = h("div", "bghud-sig__bars", bars);
-  const pulse = h("div", "bghud-pulse", [h("div", "bghud-pulse__o", [pulseRing, pulseRing2, pulseDot]), pulseLbl, barsEl, pulseVal]);
+  const pulse = h("div", "bghud-pulse", [h("div", "bghud-pulse__o", [pulseRing, pulseRing2, pulseDot]), pulseLbl, barsEl]);
   root.append(pulse);
   let pulsePh = 0, focusK = 0, burstT = 0, burstCol = "79,227,255", sparks = [];
   let curTele = 1, ringInT = 0;
@@ -238,7 +241,7 @@ export function createHud({ onLock, onZoom }) {
     get debug() { return { focus: st.focus?.id || null, v: +st.v.toFixed(2), lock: st.lock?.id || null, left: +st.left.toFixed(2), card: cardFor?.id || null }; },
     resize: layout,
     /** 배경 보기를 닫거나 패널이 뜨면 — 링 · 카드를 비운다 */
-    reset() { resetDwell(st); hideCard(); },
+    reset() { resetDwell(st); hideCard(); root.classList.remove("is-targeted"); },
     /**
      * 한 프레임. f = { active(보이기), interact(잡기 판정 — 성간 이동 중엔 false), dt, yawDeg, pitchDeg, tele, zoomR(뒤로 물러선 거리 0 ~ 0.6, 없으면 0), ppd(화면 px / 도),
      * fwd(시선 방향), project(dir → [x, y] | null, CSS px), targets([{ id, n, dir, tol, draw, col, found, below, stars?, lines? }]), sky(하늘 이름) }
@@ -246,7 +249,7 @@ export function createHud({ onLock, onZoom }) {
     update(f) {
       if (!W) layout(window.innerWidth, window.innerHeight);
       set("on", f.active, (v) => { root.classList.toggle("is-on", v); if (!v) { resetDwell(st); hideCard(); } });
-      if (!f.active) return;
+      if (!f.active) { root.classList.remove("is-targeted"); return; }
       const now = performance.now();
       curTele = f.tele;
       const cy = VH / 2;
@@ -298,6 +301,7 @@ export function createHud({ onLock, onZoom }) {
         if (got) { const info = onLock(got) || {}; showCard(got, info); }
         if (cardFor && (!st.lock || st.lock.id !== cardFor.id)) hideCard();
       } else { resetDwell(st); hideCard(); }
+      root.classList.toggle("is-targeted", !!(st.focus || st.lock));
       // 잡힘 꺾쇠
       const lt = st.lock || hit;
       if (lt) {
@@ -339,7 +343,7 @@ export function createHud({ onLock, onZoom }) {
       // ── 방위 테이프 · 힌트 점
       const yaw = ((f.yawDeg % 360) + 360) % 360;
       const yq = Math.round(yaw / 0.15) * 0.15;   // (제안 D · E) 0.15° 데드밴드 — 손떨림에 테이프 숫자가 떨지 않게
-      set("tape", yq.toFixed(2), (y) => { tape.setAttribute("transform", `translate(${(-y * U).toFixed(2)},0)`); hdg.textContent = `${String(Math.round(y) % 360).padStart(3, "0")}°`; });
+      set("tape", yq.toFixed(2), (y) => { tape.setAttribute("transform", `translate(${(-y * U).toFixed(2)},0)`); hdg.textContent = String(Math.round(y) % 360).padStart(3, "0"); });
       const bs = beacons(yaw, f.fwd, f.targets, 21);
       const bKey = bs.map((b) => `${b.dx.toFixed(1)},${b.alpha.toFixed(2)},${b.below ? 1 : 0}`).join("|");
       set("bcn", bKey, () => {
@@ -369,7 +373,7 @@ export function createHud({ onLock, onZoom }) {
         const ph2 = (ph + 0.5) % 1, near20 = near < 20 ? 1 : 0;
         pulseRing.style.transform = `scale(${(1 + 1.6 * ph).toFixed(2)})`; pulseRing.style.opacity = REDUCE.matches ? "0.5" : (0.7 * (1 - ph)).toFixed(2);
         pulseRing2.style.transform = `scale(${(1 + 1.6 * ph2).toFixed(2)})`; pulseRing2.style.opacity = REDUCE.matches ? "0" : (near20 * 0.5 * (1 - ph2)).toFixed(2);
-        set("pulseTxt", Math.round(near), (d) => { pulseVal.textContent = `${String(d).padStart(3, "0")}°`; });
+
         // (합집합 S26) 켜진 막대 수 = 1 + round(kk · 4) — 개수가 바뀔 때만 클래스 토글
         set("bars", 1 + Math.round(kk * 4), (n) => bars.forEach((b, i) => b.classList.toggle("on", i < n)));
       }
@@ -403,7 +407,7 @@ export function createHud({ onLock, onZoom }) {
           const yy = -(i * dl - lz) * K, big = ((i % 5) + 5) % 5 === 0, zero = i === 0;
           zml.appendChild(sv("line", { x1: 186, x2: big ? 178 : 182, y1: yy.toFixed(2), y2: yy.toFixed(2), stroke: zero ? PK : CY, "stroke-width": big ? ".7" : ".4", opacity: big ? ".9" : ".5" }));
         }
-        const zs = "×" + zv.toFixed(1).padStart(4, "0");   // 「×00.6」 「×01.0」 「×06.0」 — 숫자 4글자 고정
+        const zs = "×" + zv.toFixed(1);
         zmVal.textContent = zs;
         zmFill.setAttribute("y2", Math.max(-52, Math.min(52, zy(1))).toFixed(2));   // ×1 위치 ↔ 현재(y 0)
         zoomBtn.textContent = f.tele > 1.5 ? "－ 원래대로" : "＋ 확대";

@@ -18,13 +18,13 @@ const REBUILD_DH = 150;       // 높이만 이만큼 이상 바뀌면 다시 그
 let host = null, svg = null, items = [], bodies = [], els = [];
 let W = 0, H = 0, raf = 0, tPrev = 0, lastShake = 0, rebuildT = 0, sensorOn = false;
 const requested = new URLSearchParams(window.location.search).get("bg");
-// (bg-dome) 기본 배경 = UFO 돔(d) — 2026-11-04 운영자 지시. ?bg=normal = 같은 돔을 「가속 없이 지금 시각」으로만(확인용 bgtime · bgspeed 무시).
+// 첫 방문은 기본 배경. ?bg=normal 은 UFO 돔을 「가속 없이 지금 시각」으로 표시한다.
 // 옛 배경(v4.9.8 분홍 → 파랑 톤 + 로고 도형)은 ?bg=classic, 시안은 ?bg=a · b · c
 // (11-06 운영자) 테마 버튼 길게 누르기로 「기본(main 의 배경) · UFO 돔 · 생일」 중 고른다 — 고른 값은 기기에 기억(localStorage "bgtheme").
 // 주소에 ?bg= 가 있으면 그게 우선(시험용).
 const BGTHEME_KEY = "bgtheme";
-function storedTheme() { try { return localStorage.getItem(BGTHEME_KEY) === "classic" ? "classic" : "dome"; } catch { return "dome"; } }
-let variant = requested === "classic" ? null : ["a", "b", "c", "d"].includes(requested) ? requested : storedTheme() === "classic" ? null : "d";
+function storedTheme() { try { return localStorage.getItem(BGTHEME_KEY) === "dome" ? "dome" : "classic"; } catch { return "classic"; } }
+let variant = requested === "classic" ? null : ["a", "b", "c", "d"].includes(requested) ? requested : requested === "normal" ? "d" : storedTheme() === "classic" ? null : "d";
 const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 let scene = null, momentT = 0, momentEndT = 0;
 let sensorArmed = false, sensorAsked = false;
@@ -264,6 +264,7 @@ export function setBgTheme(kind) {
   if (variant) host.dataset.variant = variant; else delete host.dataset.variant;
   build();
   syncMotion();
+  document.dispatchEvent(new Event("mew:bgtheme"));
 }
 
 export function initBgDeco() {

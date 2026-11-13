@@ -258,8 +258,8 @@ html:has(#bgdeco[data-variant="d"]) .tt__legend { color: var(--color-text); }
 .ntc__theme::before { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(255, 119, 136, .55), rgba(115, 200, 242, .45)); transform: scaleY(0); transform-origin: 50% 100%; pointer-events: none; }
 .ntc__theme::after { content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .75), transparent); transform: skewX(-18deg); opacity: 0; pointer-events: none; }
 :root[data-theme="light"] .ntc__theme::after { background: linear-gradient(100deg, transparent, rgba(255, 119, 136, .6), rgba(115, 200, 242, .6), transparent); }   /* 밝은 화면은 버튼이 희어 흰 빛줄기가 안 보인다 → 분홍 · 파랑 빛줄기 */
-.ntc__theme.is-hint::after { animation: bgv-hint-glint .7s ease-out 1; }
-.ntc__theme.is-hint::before { animation: bgv-hint-fill 1.5s cubic-bezier(.3, 0, .2, 1) .75s 1 both; }
+.ntc__theme.is-hint::after { animation: bgv-hint-glint .7s ease-out 2; }
+.ntc__theme.is-hint::before { animation: bgv-hint-fill 1.5s cubic-bezier(.3, 0, .2, 1) 1.4s 1 both; }
 .ntc__theme.is-holding::before { transform: scaleY(1); transition: transform .5s linear; }
 @keyframes bgv-hint-glint { 0% { left: -60%; opacity: 0; } 20% { opacity: 1; } 100% { left: 120%; opacity: 0; } }
 @keyframes bgv-hint-fill { 0% { transform: scaleY(0); opacity: 1; } 62% { transform: scaleY(1); opacity: 1; } 100% { transform: scaleY(1); opacity: 0; } }
@@ -313,7 +313,9 @@ html:has(#bgdeco[data-variant="d"]) .tt__legend { color: var(--color-text); }
   box-sizing: border-box;
 }
 .bgvw__opt[aria-checked="true"]::before { border-color: var(--color-collab); background: radial-gradient(circle, var(--color-collab) 0 3px, transparent 3.5px); }
-.bgvw__label { font-size: 14px; font-weight: 600; }
+.bgvw__label { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
+.bgvw__new { padding: 3px 6px; border-radius: 5px; background: #ffccdf; color: #792346; font-size: 10px; font-weight: 800; letter-spacing: .06em; }
+:root[data-theme="light"] .bgvw__new { background: #ffe2ed; color: #92284f; }
 .bgvw__sub { grid-column: 2; font-size: 12px; color: var(--color-text-muted); line-height: 1.4; }
 @media (prefers-reduced-motion: reduce) { .bgvw { transition: none; } }
 .bgvw-toast {
@@ -343,3 +345,25 @@ html:has(#bgdeco[data-variant="d"]) .tt__legend { color: var(--color-text); }
 /* 워프 방사형 블러 층(js/bgdomegl.js zoomBlur) — 가운데는 비우고 가장자리로 갈수록 번진다 */
 #bgdeco .bgdm-zblur { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; opacity: 0;
   -webkit-mask-image: radial-gradient(ellipse at 50% 50%, transparent 0, transparent 24%, #000 78%); mask-image: radial-gradient(ellipse at 50% 50%, transparent 0, transparent 24%, #000 78%); }
+
+/* 반짝임 다음 차오르는 모습과 함께 길게 누르기 동작을 설명한다. */
+.bgvw-hold-hint {
+  position: fixed;
+  z-index: 976;
+  max-width: calc(100vw - 16px);
+  padding: 7px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .16);
+  font-size: 12px;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+body:has(.ntc__theme.is-hint) .bgvw-hold-hint { visibility: visible; opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .bgvw-hold-hint { transition: none; }
+}

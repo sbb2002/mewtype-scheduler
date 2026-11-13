@@ -1,8 +1,10 @@
 // bgpeek.js — (bg-dome 시험) 폰 전용 「배경 보기」. 모양 · 움직임은 css/bgpeek.css.
-// 지금 보는 예고 레인에서 위로 튕기면(플릭) 화면 구역이 가까운 가장자리로 걷히고 배경만 남는다. 다시 누르면 제자리로 돌아온다.
-//
-// 레인은 세로 스크롤 영역이라 튕김을 늘 가로채면 카드 목록을 못 내린다 → 손을 댄 순간 그 레인이 이미 맨 아래(또는 넘칠 내용이 없음)였을 때만 인정한다.
-// 내용이 긴 레인은 끝까지 내린 뒤 한 번 더 위로 튕기면 걷힌다.
+// 빈 공간을 길게 누른 뒤, 파란 테두리가 켜진 상태에서 손을 떼지 않고 위로 플릭한다.
+// 준비 전에 움직이면 일반 스크롤로 처리한다. 카드와 조작 요소에서는 준비하지 않는다.
+
+import { bgTheme } from "./bgdeco.js";
+
+const canPeek = () => bgTheme() !== "classic" || document.documentElement.hasAttribute("data-bday");
 
 const PHONE = window.matchMedia("(max-width: 767px)");
 const REDUCE = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -22,7 +24,7 @@ let touch = null;
 
 // 첫 방문 안내(운영자 11-10) — 위로 미는 손 모양 + 「위로 밀어 배경 보기」. 이 기기에서 처음 한 번만:
 // 위로 튕겨 배경을 열면 바로 사라지고, 안내가 떠 있은 지 15초가 지나도 사라지며 다시 뜨지 않는다.
-const CUE_KEY = "bgpeek-cue";
+const CUE_KEY = "bgpeek-hold-flick-cue";
 const CUE_SHOW_MS = 1200;   // 페이지가 자리 잡은 뒤 뜬다
 const CUE_LIFE_MS = 15000;
 let cue = null;
@@ -41,7 +43,7 @@ function dismissCue() {
 }
 
 function showCue() {
-  if (!cue || cueSeen() || !PHONE.matches || peeking) return;
+  if (!canPeek() || !cue || cueSeen() || !PHONE.matches || peeking) return;
   cue.hidden = false;
   requestAnimationFrame(() => cue.classList.add("is-on"));
   cueT = setTimeout(dismissCue, CUE_LIFE_MS);
@@ -59,7 +61,7 @@ function setInert(on) {
 }
 
 function hide() {
-  if (peeking || !PHONE.matches) return;
+  if (!canPeek() || peeking || !PHONE.matches) return;
   if (root.hasAttribute("data-bday-full")) return;   // 생일 「온전히 보기」 중이면 이미 배경만 보인다
   dismissCue();   // 한 번 해 보면 안내는 끝
   peeking = true;
@@ -82,27 +84,49 @@ function show() {
   unlockT = setTimeout(() => { if (!peeking) catcher.hidden = true; }, REDUCE.matches ? 200 : RETURN_MS);
 }
 
-function laneAtBottom(lane) {
-  return lane.scrollTop + lane.clientHeight >= lane.scrollHeight - 2;
-}
-
-function onTouchStart(e) {
+const HOLD_MS = 500, HOLD_SLOP = 10;
+const CONTENT = "a, button, input, textarea, select, [role=button], [contenteditable], .card, .tcard, .lane__item, .lane__header";
+function cancelTouch() {
+  if (touch) {
+    clearTimeout(touch.timer);
+    touch.lane.classList.remove("bgp-armed");
+  }
   touch = null;
-  if (peeking || !PHONE.matches || e.touches.length !== 1) return;
-  const lane = e.target.closest?.(".lane");
-  if (!lane || lane.inert || !lane.classList.contains("lane--active")) return;   // 옆에 비친 레인 · 캐러셀이 아닐 때는 대상 아님
-  const t = e.touches[0];
-  touch = { x: t.clientX, y: t.clientY, t: e.timeStamp, lane, atBottom: laneAtBottom(lane) };
 }
-
+function onTouchStart(e) {
+  cancelTouch();
+  if (!canPeek() || peeking || !PHONE.matches || e.touches.length !== 1 || root.hasAttribute("data-bday-full")) return;
+  const lane = e.target.closest?.(".lane--active");
+  if (!lane || lane.inert || e.target.closest(CONTENT)) return;
+  const t = e.touches[0];
+  const g = touch = { id: t.identifier, x: t.clientX, y: t.clientY, lane, scrollTop: lane.scrollTop, armed: false, moving: false };
+  g.timer = setTimeout(() => {
+    if (touch !== g || !lane.isConnected || Math.abs(lane.scrollTop - g.scrollTop) > 2) { cancelTouch(); return; }
+    g.armed = true;
+    lane.classList.add("bgp-armed");
+    if (navigator.vibrate && !REDUCE.matches) try { navigator.vibrate(8); } catch {}
+  }, HOLD_MS);
+}
+function onTouchMove(e) {
+  const g = touch;
+  if (!g) return;
+  const t = Array.from(e.touches).find(t => t.identifier === g.id);
+  if (e.touches.length !== 1 || !t || !g.lane.isConnected) { cancelTouch(); return; }
+  const dx = Math.abs(t.clientX - g.x), dy = Math.abs(t.clientY - g.y);
+  if (!g.armed) {
+    if (Math.hypot(dx, dy) > HOLD_SLOP || Math.abs(g.lane.scrollTop - g.scrollTop) > 2) cancelTouch();
+    return;
+  }
+  if (dx > HOLD_SLOP && dx > dy * MAX_SLOPE) { cancelTouch(); return; }
+  if (e.cancelable) e.preventDefault();
+  if (!g.moving && dy > 3) { g.moving = true; g.t = e.timeStamp; }
+}
 function onTouchEnd(e) {
   const g = touch;
-  touch = null;
-  if (!g || !g.atBottom || e.touches.length) return;
-  const t = e.changedTouches[0];
-  if (!t) return;
-  const dy = g.y - t.clientY;                 // 위로 갈수록 +
-  const dx = Math.abs(t.clientX - g.x);
+  const t = g && Array.from(e.changedTouches).find(t => t.identifier === g.id);
+  cancelTouch();
+  if (!g?.armed || !g.moving || !t || e.touches.length) return;
+  const dy = g.y - t.clientY, dx = Math.abs(t.clientX - g.x);
   const dt = Math.max(1, e.timeStamp - g.t);
   if (dy < MIN_DY || dt > MAX_MS || dx > dy * MAX_SLOPE || dy / dt < MIN_V) return;
   hide();
@@ -139,13 +163,27 @@ export function initBgPeek() {
   cue.id = "bg-peek-cue";
   cue.hidden = true;
   cue.setAttribute("aria-hidden", "true");
-  cue.innerHTML = `<div class="bgp-cue__hand"><i></i><i></i><i></i></div><span class="bgp-cue__txt">위로 밀어 배경 보기</span>`;   // 고정 문자열(데이터 아님)
+  cue.innerHTML = `<div class="bgp-cue__hand"><i></i><i></i><i></i></div><span class="bgp-cue__txt">빈 곳을 꾹 누른 채 위로 밀어 배경 보기</span>`;
   document.body.appendChild(cue);
   if (PHONE.matches && !cueSeen()) setTimeout(showCue, CUE_SHOW_MS);
 
+  const syncTheme = () => {
+    cancelTouch();
+    clearTimeout(cueT);
+    if (canPeek()) { cueT = setTimeout(showCue, CUE_SHOW_MS); return; }
+    if (cue) { cue.classList.remove("is-on"); cue.hidden = true; }
+    show();
+  };
+  document.addEventListener("mew:bgtheme", syncTheme);
+  new MutationObserver(syncTheme).observe(root, { attributes: true, attributeFilter: ["data-bday"] });
+
   board.addEventListener("touchstart", onTouchStart, { passive: true });
+  board.addEventListener("touchmove", onTouchMove, { passive: false });
+  board.addEventListener("contextmenu", e => { if (touch?.armed) e.preventDefault(); });
+  window.addEventListener("blur", cancelTouch);
+  document.addEventListener("visibilitychange", cancelTouch);
   board.addEventListener("touchend", onTouchEnd, { passive: true });
-  board.addEventListener("touchcancel", () => { touch = null; }, { passive: true });
+  board.addEventListener("touchcancel", cancelTouch, { passive: true });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") show(); });
-  PHONE.addEventListener("change", () => { if (!PHONE.matches) show(); });   // PC 폭으로 바뀌면 바로 되돌린다
+  PHONE.addEventListener("change", () => { if (!PHONE.matches) { cancelTouch(); show(); } });   // PC 폭으로 바뀌면 바로 되돌린다
 }

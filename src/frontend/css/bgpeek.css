@@ -6,6 +6,11 @@
    birthday.css 의 opacity 전환(온전히 보기)보다 뒤에 읽혀야 해서 index.html 맨 끝에 둔다 — 그래서 transition 에 opacity 도 같이 적는다. */
 
 @media (max-width: 767px) {
+  /* Expanded invisible hit areas must not flash as rectangular browser tap overlays. */
+  #board, #board *, #pager-dots, #pager-dots *,
+  #pager-dots *::before, #pager-dots *::after {
+    -webkit-tap-highlight-color: transparent;
+  }
   :root {
     --bgp-lane-alpha: 46%;                              /* 레인 판의 불투명도(나머지는 배경이 흐리게 비친다) */
     --bgp-head-alpha: 70%;                              /* 머리줄(이름표) — 카드가 밑으로 지나가도 이름이 읽히게 조금 더 진하게 */
@@ -41,6 +46,13 @@
     -webkit-backdrop-filter: var(--bgp-blur);
     backdrop-filter: var(--bgp-blur);
     border-bottom-color: var(--bgp-edge);
+  }
+  #board .lane.bgp-armed {
+    border-color: #69bdff;
+    box-shadow: inset 0 0 0 2px #69bdff, inset 0 0 18px #399aff33, 0 0 16px #399aff88;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   /* 라이브 레인은 padding-box 그라데이션으로 바탕을 칠하므로 그 바탕만 반투명 값으로 바꾼다(테두리 · 글로우는 timetable.css 그대로) */
   #board .lane.lane--live:not(.tt__lane):not(.lane--later) {
@@ -120,6 +132,8 @@
   #bg-peek-cue .bgp-cue__hand i:nth-child(2) { top: 19px; animation-delay: .22s; }
   #bg-peek-cue .bgp-cue__hand i:nth-child(3) { top: 34px; animation-delay: .44s; }
   #bg-peek-cue .bgp-cue__txt {
+    box-sizing: border-box;
+    max-width: calc(100vw - 32px);
     padding: 7px 16px;
     border-radius: 999px;
     background: rgba(18, 14, 30, .58);
@@ -129,7 +143,8 @@
     font-size: 14px;
     font-weight: 700;
     letter-spacing: .02em;
-    white-space: nowrap;
+    white-space: normal;
+    text-align: center;
     text-shadow: 0 1px 3px rgba(0, 0, 0, .4);
   }
   @keyframes bgp-cue-up {

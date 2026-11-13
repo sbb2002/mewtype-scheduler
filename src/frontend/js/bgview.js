@@ -35,14 +35,30 @@ export function setIndoorBg(v) {
 }
 const HOLD_MS = 500;    // 주소 복사(longcopy.js)와 같은 길이
 const MOVE_PX = 10;
+const UFO_NEW_KEY = "bgtheme-ufo-first-seen";
+const UFO_NEW_MS = 7 * 24 * 60 * 60 * 1000;
+let ufoFirstSeen = null, ufoNewTimer = 0;
+
+// 메뉴에서 UFO를 처음 본 순간부터 이 브라우저에서 7일간 표시한다.
+function ufoNewRemaining() {
+  const now = Date.now();
+  if (ufoFirstSeen === null) {
+    try {
+      const saved = Number(localStorage.getItem(UFO_NEW_KEY));
+      ufoFirstSeen = Number.isFinite(saved) && saved > 0 ? saved : now;
+      localStorage.setItem(UFO_NEW_KEY, String(ufoFirstSeen));
+    } catch { ufoFirstSeen = now; }
+  }
+  return Math.max(0, Math.min(UFO_NEW_MS, ufoFirstSeen + UFO_NEW_MS - now));
+}
 
 // (11-06 운영자) 길게 누르기 팝업 = 「배경 테마」 고르기. 실내 · 바깥(버츄얼 스페이스 · 초행성X · 지구)은 UFO 조작 패널(bgpanel.js)로 옮겼다.
-// 생일 칸은 생일 이스터에그가 켜지는 날에만. 시작 우선순위 = 생일 > 기억한 테마 > UFO.
+// 생일 칸은 생일 이스터에그가 켜지는 날에만. 시작 우선순위 = 생일 > 기억한 테마 > 기본.
 function themeOptions() {
   const b = birthdayToday();
   return [
-    { value: "classic", label: "기본", sub: "분홍 · 파랑 바탕에 떠다니는 도형" },
-    { value: "dome", label: "UFO", sub: "돔 안에서 둘러보기 · 가운데 조종대로 하늘 고르기" },
+    { value: "classic", label: "기본", sub: "분홍과 파랑 사이, 꿈의 조각들이 춤추는 배경" },
+    { value: "dome", label: "UFO", sub: "목적지는 무한대, 오늘도 꿈을 타고 출발!" },
     ...(b ? [{ value: "birthday", label: "생일", sub: b.label }] : []),
   ];
 }
@@ -79,7 +95,7 @@ function wipeDown(change) {
 // 언제 끝나나: 배경 테마를 실제로 바꿀 때(chooseTheme) — 키를 "1" 로 남겨 다시 안 뜬다. 팝업만 열고 닫으면 끝이 아니다.
 //   재생 중 버튼을 누르면 바로 멈춘다. 키를 저장 못 하는 환경이면 들어올 때마다 뜬다.
 const HINT_KEY = "bgtheme-hint";
-const HINT_DELAY_MS = 2600, HINT_MS = 2400, HINT_RETRY_MS = 800, HINT_MAX_TRY = 10;
+const HINT_DELAY_MS = 2600, HINT_MS = 4200, HINT_RETRY_MS = 800, HINT_MAX_TRY = 10;
 let hintBtn = null, hintTimer = 0, hintTries = 0;
 
 function hintDone() {
@@ -104,6 +120,10 @@ function tryHint() {
     if (++hintTries < HINT_MAX_TRY) hintTimer = setTimeout(tryHint, HINT_RETRY_MS);
     return;
   }
+  const rect = hintBtn.getBoundingClientRect();
+  const label = document.getElementById("bgvw-hold-hint");
+  label.style.top = `${rect.bottom + 8}px`;
+  label.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
   hintBtn.classList.add("is-hint");
   hintTimer = setTimeout(() => { hintBtn.classList.remove("is-hint"); hintTimer = 0; }, HINT_MS);
 }
@@ -199,6 +219,7 @@ function syncPop() {
 
 /** 팝업을 만든다 — 생일 칸이 날마다 달라지므로 열 때마다 새로 */
 function buildPop() {
+  clearTimeout(ufoNewTimer);
   pop?.remove();
   pop = document.createElement("div");
   pop.className = "bgvw";
@@ -222,6 +243,17 @@ function buildPop() {
     s.className = "bgvw__sub";
     s.textContent = o.sub;
     b.append(t, s);
+    if (o.value === "dome") {
+      const remaining = ufoNewRemaining();
+      if (remaining > 0) {
+        const badge = document.createElement("span");
+        badge.className = "bgvw__new";
+        badge.textContent = "NEW";
+        badge.setAttribute("aria-label", "새로운 테마");
+        t.appendChild(badge);
+        ufoNewTimer = setTimeout(() => badge.remove(), remaining);
+      }
+    }
     b.addEventListener("click", () => { close(); chooseTheme(o.value); });
     pop.appendChild(b);
   }
@@ -267,6 +299,12 @@ function cancelPress() {
 export function initBgView() {
   const btn = themeButton();   // 늘 같은 요소 — 소식 막대가 다시 그려져도 리스너가 유지된다
   hintBtn = btn;
+  const hintLabel = document.createElement("span");
+  hintLabel.className = "bgvw-hold-hint";
+  hintLabel.id = "bgvw-hold-hint";
+  hintLabel.textContent = "길게 눌러 배경 변경";
+  document.body.appendChild(hintLabel);
+  btn.setAttribute("aria-describedby", hintLabel.id);
   btn.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     stopHint();   // 안내 중에 누르면 안내는 거둔다(사용자 조작이 우선)
