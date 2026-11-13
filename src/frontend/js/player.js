@@ -17,7 +17,7 @@
 
 import { fetchPreview } from "./api.js";
 import { setMainMusicActive, setMainMusicHandOff } from './musicpriority.js';
-import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS } from "./config.js";
+import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS, FALLBACK_CHANNEL_ORDER } from "./config.js";
 import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange, kstDate, omakaseOrder, mediaCandidates, hasMv } from "./songs.js";
 import { wireSheetDrag } from "./sheetdrag.js";   // (마이크로 인터랙션) 모바일 시트 끌어 내리기
 
@@ -312,7 +312,21 @@ function onYtState(e) {
     st.pos = 0;
     yt.cueVideoById(st.vid);   // 처음 화면으로 되돌려 멈춘다 — 끝 화면의 추천 영상으로 넘어가지 않게
   }
+  emitPlayerState(e.data === S.PLAYING ? "playing" : e.data === S.BUFFERING ? "buffering" : e.data === S.ENDED ? "ended" : "paused");
   paint();
+}
+
+/**
+ * (bg-dome 시나리오) 재생 상태 알림 — document 로 PLAYER_STATE_EVENT 를 쏜다. 배경(돔)이 곡에 맞춰 멤버 색 · 별자리 힌트를 낸다(bgmusic.js).
+ * detail = { state("playing" | "buffering" | "paused" | "ended"), id(곡 id | null), members(부른 멤버 키 — singers > who, 그룹 곡 = 다섯 명) }.
+ * 플레이어 쪽은 아무것도 기다리지 않는다(듣는 쪽이 없어도 그만).
+ */
+export const PLAYER_STATE_EVENT = "mew:player-state";
+function emitPlayerState(state) {
+  const s = curSong();
+  const keys = s ? (Array.isArray(s.singers) && s.singers.length ? s.singers : [s.who]) : [];
+  const members = keys.includes("group") ? FALLBACK_CHANNEL_ORDER.slice() : keys.filter((k) => FALLBACK_CHANNEL_ORDER.includes(k));
+  try { document.dispatchEvent(new CustomEvent(PLAYER_STATE_EVENT, { detail: { state, id: s ? s.id : null, members } })); } catch { /* 옛 브라우저 */ }
 }
 
 function startTick() {

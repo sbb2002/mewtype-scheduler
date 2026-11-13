@@ -47,7 +47,10 @@
     backdrop-filter: var(--bgp-blur);
     border-bottom-color: var(--bgp-edge);
   }
+  #board .lane { transition: translate .22s ease, scale .22s ease; }
   #board .lane.bgp-armed {
+    translate: 0 -6px;                                  /* (시나리오) 떠오름 — 「들어 올릴 수 있다」 */
+    scale: 1.012;
     border-color: #69bdff;
     box-shadow: inset 0 0 0 2px #69bdff, inset 0 0 18px #399aff33, 0 0 16px #399aff88;
     -webkit-user-select: none;
@@ -131,22 +134,35 @@
   #bg-peek-cue .bgp-cue__hand i:nth-child(1) { top: 4px; }
   #bg-peek-cue .bgp-cue__hand i:nth-child(2) { top: 19px; animation-delay: .22s; }
   #bg-peek-cue .bgp-cue__hand i:nth-child(3) { top: 34px; animation-delay: .44s; }
-  #bg-peek-cue .bgp-cue__txt {
-    box-sizing: border-box;
-    max-width: calc(100vw - 32px);
-    padding: 7px 16px;
-    border-radius: 999px;
-    background: rgba(18, 14, 30, .58);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    color: #fff;
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: .02em;
-    white-space: normal;
-    text-align: center;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+  /* 손끝 — 1.2초 꾹 눌림(둘레 링이 차오름) → 위로 미끄러짐 → 사라짐. 3.4초 반복 */
+  #bg-peek-cue .bgp-cue__finger { position: relative; width: 34px; height: 34px; animation: bgp-cue-finger 3.4s ease-in-out infinite; }
+  #bg-peek-cue .bgp-cue__finger::before {
+    content: ""; position: absolute; inset: 7px; border-radius: 50%;
+    background: rgba(255, 255, 255, .9); box-shadow: 0 0 10px rgba(255, 255, 255, .8);
   }
+  #bg-peek-cue .bgp-cue__finger b {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(#69bdff var(--bgp-fill, 0%), transparent 0);
+    -webkit-mask: radial-gradient(circle, transparent 13px, #000 14px); mask: radial-gradient(circle, transparent 13px, #000 14px);
+    animation: bgp-cue-fill 3.4s linear infinite;
+  }
+  @property --bgp-fill { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
+  @keyframes bgp-cue-fill { 0% { --bgp-fill: 0%; } 35%, 100% { --bgp-fill: 100%; } }
+  @keyframes bgp-cue-finger {
+    0%   { transform: translateY(0); opacity: 0; }
+    8%   { opacity: 1; }
+    38%  { transform: translateY(0); opacity: 1; }
+    70%  { transform: translateY(-90px); opacity: 0; }
+    100% { transform: translateY(-90px); opacity: 0; }
+  }
+  /* 준비된 레인 위의 빛 물결(js/bgpeek.js showWave) */
+  .bgp-wave { position: fixed; z-index: 964; pointer-events: none; overflow: hidden; border-radius: 14px; }
+  .bgp-wave i {
+    position: absolute; left: 0; right: 0; height: 40%; top: 100%;
+    background: linear-gradient(to top, transparent, rgba(105, 189, 255, .28) 60%, transparent);
+    animation: bgp-wave-up 1.1s ease-out infinite;
+  }
+  @keyframes bgp-wave-up { 0% { top: 100%; } 100% { top: -40%; } }
   @keyframes bgp-cue-up {
     0%   { opacity: 0; transform: translateY(16px); }
     35%  { opacity: 1; }
@@ -166,4 +182,7 @@
   #bg-peek-cue, #bg-peek-cue.is-on { transition: opacity 180ms linear; }
   #bg-peek-cue .bgp-cue__hand i { animation: none; opacity: .9; }
   #bg-peek-cue .bgp-cue__hand i:nth-child(n+2) { opacity: .55; }
+  #bg-peek-cue .bgp-cue__finger, #bg-peek-cue .bgp-cue__finger b { animation: none; }
+  #bg-peek-cue .bgp-cue__finger b { --bgp-fill: 100%; }
+  #board .lane.bgp-armed { translate: none; scale: none; }
 }

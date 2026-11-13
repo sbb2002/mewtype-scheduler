@@ -484,3 +484,43 @@
 #bgdeco .bgdm-air .bgfx { position: absolute; z-index: 1; }
 #bgdeco .bgdm-air__piece { z-index: 1; }
 #bgdeco .bgcs { z-index: 2; }
+
+/* ── (bg-dome 시나리오, 11-13) 해금 표시 — 글 안내 카드 대신 ─────────────────────────
+   .is-fresh = 새로 열린 칸(눌러 볼 때까지 테두리가 숨 쉬듯 빛남) · .ufo-call = 패널이 꺼져 있을 때 화면 아래 「벌려 다가가기」 손짓 신호
+   .ufo-fly = 찾은 대상 모양이 가운데에서 아래(콘솔 쪽)로 날아가는 것(js/bgpanel.js fly). 움직임 줄이기면 빛남은 고정, 손짓 · 날아가기 없음 */
+.ufo-tile.is-fresh, .ufo-extra-btn.is-fresh { border-color: var(--ufo-cyan); animation: ufo-fresh 1.6s ease-in-out infinite; }
+@keyframes ufo-fresh { 0%, 100% { box-shadow: 0 0 0 rgba(79, 227, 255, 0), inset 0 0 0 rgba(79, 227, 255, 0); } 50% { box-shadow: 0 0 14px rgba(79, 227, 255, .55), inset 0 0 14px rgba(79, 227, 255, .22); } }
+.ufo-call {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); z-index: 975;   /* 「줌인하여…」 안내(.ufo-hint, 아래 96px) 밑 */
+  width: 46px; height: 46px; margin-left: -23px; display: grid; place-items: center; border-radius: 50%;
+  border: 1px solid rgba(79, 227, 255, .5); background: rgba(10, 8, 26, .5);
+  pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s;
+}
+.ufo-call::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid rgba(79, 227, 255, .7); animation: ufo-call-ring 1.8s ease-out infinite; }
+.ufo-call svg { animation: ufo-call-spread 1.8s ease-in-out infinite; }
+@keyframes ufo-call-ring { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(1.9); opacity: 0; } }
+@keyframes ufo-call-spread { 0%, 100% { transform: scale(.82); } 50% { transform: scale(1.08); } }
+html.bg-peek .ufo-call.is-on { opacity: 1; visibility: visible; transition: opacity .3s ease; }
+html[data-bg-panel] .ufo-call { opacity: 0; visibility: hidden; }
+.ufo-fly { position: fixed; left: 50%; top: 50%; z-index: 979; pointer-events: none; filter: drop-shadow(0 0 8px rgba(79, 227, 255, .9)); }
+.ufo-fly > i { display: block; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 0 12px 4px rgba(255, 210, 240, .9); }
+@media (prefers-reduced-motion: reduce) {
+  .ufo-tile.is-fresh, .ufo-extra-btn.is-fresh { animation: none; box-shadow: 0 0 10px rgba(79, 227, 255, .45); }
+  .ufo-call::after, .ufo-call svg { animation: none; }
+}
+
+/* ── (bg-dome 시나리오, 11-13) 음악 테두리 — 배경 보기 중 곡이 흐르면 화면 위 가장자리에 부르는 멤버 색 띠(js/bgmusic.js).
+   가는 선 + 아래로 번지는 빛. 7초에 한 번 천천히 숨 쉰다(점멸 아님). 움직임 줄이기면 고정 */
+.bg-music-rim {
+  position: fixed; left: 0; right: 0; top: 0; height: 70px; z-index: 971; pointer-events: none;
+  opacity: 0; visibility: hidden; transition: opacity 1.2s ease, visibility 0s linear 1.2s;
+}
+.bg-music-rim::before, .bg-music-rim::after { content: ""; position: absolute; left: 0; right: 0; top: 0; background: var(--rim, none); }
+.bg-music-rim::before { height: 3px; }
+.bg-music-rim::after {
+  height: 70px; opacity: .55; filter: blur(10px);
+  -webkit-mask-image: linear-gradient(#000, transparent); mask-image: linear-gradient(#000, transparent);
+}
+html.bg-peek .bg-music-rim.is-on { opacity: 1; visibility: visible; transition: opacity 1.2s ease; animation: bg-rim-breathe 7s ease-in-out infinite; }
+@keyframes bg-rim-breathe { 0%, 100% { opacity: .7; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { html.bg-peek .bg-music-rim.is-on { animation: none; opacity: .85; } }

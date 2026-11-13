@@ -25,6 +25,7 @@ import { createHud } from "./bghud.js";
 import { dirFromAzAlt, toSpace, toDome, aimSpace, sepDeg, photoDir, moonFrame, levelSpace } from "./bghudlogic.js";
 import { createFx } from "./bgfx.js";
 import { MEMBER_LIGHT_COLORS, FALLBACK_CHANNEL_ORDER } from "./config.js";
+import { createMusicRim, soloOf, rgbOf } from "./bgmusic.js";
 import { lastLive, pulse, forceLive } from "./bglive.js";   // (bg-dome, 11-10) 돔 바닥 라이브 조명
 import * as sound from "./bgsound.js";
 import { createWarp, shiftGear, tickWarp, warpReady, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
@@ -1453,6 +1454,7 @@ export function createDomeGL(host, isPaused) {
     ufoPanel.setHoldable(unlocked(unlockS, "hold"));
   }
   applyLocks();
+  if (unlocked(unlockS, "hold") && !unlockS.seen.holdNotice) ufoPanel.mark("space", true);   // (시나리오) 길게 누르기를 열고 아직 안 써 본 기기 — 칸 빛남 + 시연(옛 nudge 대신)
   /** 지금 있는 곳 — "earth" 바깥 · "pink" 버츄얼 스페이스 · "space" 기본 우주(사진 없음) · 딥필드 키 · "moon" */
   const placeKey = () => (outdoor ? "earth" : INDOOR_BG !== "space" ? "pink" : keyOfIdx(deepIdx) || "space");
   const PLACE_NAME = { earth: "지구", pink: "버츄얼 스페이스", space: "기본 우주" };
@@ -1478,21 +1480,17 @@ export function createDomeGL(host, isPaused) {
   });
   let hudZoomFrom = null, hudZoomAt = -Infinity, dbgView = null;
   const fx = createFx(air);   // (11-09) 가끔 나타나는 YMMT 별자리 · UFO — 공중 무늬 층 안(바닥 콘솔 뒤)
-  // (11-09 운영자) 해금 · 탐험 완료 = 즉시 연출(진동 · 소리, 화면 효과는 bghud.js) → 2초 뒤 그 기능으로 자동 이동 → 안내 카드(이동 방법)
-  let guideTimer = 0;
+  // (11-09 운영자) 해금 · 탐험 완료 = 즉시 연출(진동 · 소리, 화면 효과는 bghud.js).
+  // (bg-dome 시나리오 11-13 — 운영자 「텍스트 설명 최소화」) 2초 뒤 자동 이동 + 글 안내 카드는 없앴다. 대신 찾은 대상의 모양이 바닥 콘솔 쪽으로 날아가고,
+  // 열린 칸은 눌러 볼 때까지 빛난다(bgpanel.js mark · fly). 사용자가 콘솔에서 직접 눌러 출발한다. 길게 누르기는 패널이 뜰 때 칸이 저절로 반쯤 차오르는 시연.
+  const FX_TILE = new Map([[GUIDE.space, ["space", "space"]], [GUIDE.hold, ["space", "space"]], [GUIDE.earth, ["earth", "earth"]], [GUIDE.light, ["light", "star"]]]);
   function unlockFx(g) {
     if (navigator.vibrate && !reducedMotion.matches) try { navigator.vibrate([40, 40, 40, 40, 140]); } catch { /* 미지원 */ }
     sound.unlock();
-    clearTimeout(guideTimer);
-    guideTimer = setTimeout(async () => {
-      if (stopped) return;
-      if (g.go === "space") { if (outdoor || INDOOR_BG !== "space") await pickSky("space"); }
-      else if (g.go === "hold") holdTravel();
-      else if (g.go === "earth") { if (!outdoor) await pickSky("earth"); }
-      let tries = 0;
-      const showGuide = () => { if (stopped) return; if ((sky || picking) && tries++ < 40) { setTimeout(showGuide, 200); return; } ufoPanel.guide(g); };   // 하늘 전환이 끝나면 안내
-      setTimeout(showGuide, 600);
-    }, 2000);
+    const m = FX_TILE.get(g);
+    if (!m) return;   // 딥필드 탐험 · 달 궤도 = 알림(toast)과 워프 목적지 창이 이미 알려 준다
+    setTimeout(() => { if (!stopped) ufoPanel.fly(m[1]); }, 450);   // 시선 링의 잡힘 연출이 지나간 뒤
+    ufoPanel.mark(m[0], g === GUIDE.hold);
   }
   ufoPanel.setLight(null, (v) => { unlockS.seen.lightOff = !v; if (v) delete unlockS.seen.lightOff; persistUnlock(); ufoPanel.setLight(v); buzz(); });
   // (3단계 보상) 자유 항해 — 가 본 딥필드 · 달 궤도로 워프 없이 바로(하늘 전환 「돔 재투영」). 우주가 아니면 초행성X 로 바꾼 뒤 그 사진을 건다
@@ -1548,7 +1546,7 @@ export function createDomeGL(host, isPaused) {
         list = [{ id: "neb", n: "성운", unlock: "hold", draw: "neb", col: "255,111,181", tol: 5, d: dirFromAzAlt(y0 + 32, 22) }];
         ZODIAC.forEach((z, i) => {
           const az = y0 + 95 + i * 55, alt = 24 + (i % 2) * 14;
-          list.push({ id: z.id, n: z.n, zod: true, who: z.who, draw: "zod", col: "79,227,255", tol: 8, d: dirFromAzAlt(az, alt), S: z.S.map(([dh, da]) => dirFromAzAlt(az + dh, alt + da)), lines: z.L });
+          list.push({ id: z.id, n: z.n, zod: true, who: z.who, key: z.key, draw: "zod", col: "79,227,255", tol: 8, d: dirFromAzAlt(az, alt), S: z.S.map(([dh, da]) => dirFromAzAlt(az + dh, alt + da)), lines: z.L });
         });
         for (const t of list) { t.s = toSpace(spaceRot, t.d); if (t.S) t.sS = t.S.map((d) => toSpace(spaceRot, d)); }
       } else {
@@ -1562,10 +1560,13 @@ export function createDomeGL(host, isPaused) {
       t.dir = t.s ? toDome(spaceRot, t.s) : t.d;
       if (t.sS) t.stars = t.sS.map((x) => toDome(spaceRot, x)); else if (t.S) t.stars = t.S;
       t.found = unlockS.found.includes(t.id);
+      // (시나리오) 솔로 곡이 흐르면 그 멤버의 탄생 별자리가 멤버 색으로 옅게 떠오른다 — 아직 못 찾은 것만(찾기 힌트, bghud.js zod)
+      if (t.zod) { const solo = soloOf(musicRim.music); t.hint = !t.found && solo && solo === t.key ? rgbOf(MEMBER_LIGHT_COLORS[solo]) : null; }
     }
     return set;
   }
-  const life = new AbortController();   // 테마를 바꿔 장면을 없앨 때(destroy) 문서 · 창 리스너를 한꺼번에 뗀다
+  const life = new AbortController();
+  const musicRim = createMusicRim(MEMBER_LIGHT_COLORS, life.signal);   // (시나리오) 음악 테두리 · 별자리 힌트(bgmusic.js)   // 테마를 바꿔 장면을 없앨 때(destroy) 문서 · 창 리스너를 한꺼번에 뗀다
   // 패널에서 고르기(2단계): 버츄얼 스페이스 · 초행성X = 실내 배경, 지구 = 바깥 보기(위치 권한 — 거절 · 실패면 지금 배경에 남는다)
   // (11-06 운영자) 하늘은 「돔 재투영」으로 바뀐다(아래 beginSky — 두 이벤트 듣기에서 바꾸기 직전에 시작).
   // 초행성X 는 우주 사진을 다 받은 뒤에 시작한다 — 안 그러면 빈 하늘이 맺혔다가 사진이 툭 나타난다(받는 동안 칸에 「불러오는 중…」, 길어야 4초).
@@ -1776,7 +1777,7 @@ export function createDomeGL(host, isPaused) {
         if (star.dest === "space") delete hudSets.space;   // 기본 우주로 돌아오면 못 찾은 대상을 지금 시선 기준으로 다시 놓는다
         setDeep(star.nextDeep);
         const got = arrive(unlockS, star.dest);   // (11-09 해금) 처음 간 딥필드 = 워프 목적지에 추가, 다섯 곳 뒤 달 궤도 = 해금
-        if (got === "moon") { persistUnlock(); ufoPanel.toast("달 궤도 도착 — 워프 목적지에 추가"); sound.unlock(); setTimeout(() => ufoPanel.guide(GUIDE.moon), 1800); }
+        if (got === "moon") { persistUnlock(); ufoPanel.toast("달 궤도 도착 — 워프 목적지에 추가"); sound.unlock(); }
         else if (star.dest !== "space" && !unlockS.vis.includes(star.dest) && star.dest !== "moon") ufoPanel.toast(`${placeInfo(star.dest).name} 도착 · 사진 속 표식을 찾아보세요`);
       }
       const c = jumpCenter(), maxR = Math.hypot(Math.max(c[0], W - c[0]), Math.max(c[1], H - c[1])) + 40;
@@ -2495,7 +2496,6 @@ export function createDomeGL(host, isPaused) {
       // 우주 사진은 처음 고를 때 받는다 — 받는 동안 칸에 표시(그려 만든 우주 모드는 사진이 없다)
       const loading = spacePreload || (INDOOR_BG === "space" && !outdoor && SPACE_MODE !== "shader" && !spaceTex.map);
       if (!star) ufoPanel.setChip("space", loading ? "불러오는 중…" : unlocked(unlockS, "hold") ? "길게 눌러 성간 이동" : "");   // 성간 이동 중엔 「성간 이동 중」(bgpanel setWarping). 해금 전엔 칩 없음
-      if (!ufoPanel.on && unlocked(unlockS, "hold") && !unlockS.seen.holdNotice) ufoPanel.nudge("space");
       ufoPanel.setLight(unlocked(unlockS, "light") ? !unlockS.seen.lightOff : null);
       const here = placeKey();
       ufoPanel.setFreeNav(unlocked(unlockS, "freenav") ? [...unlockS.vis.map((k) => ({ key: k, name: placeName(k), here: here === k })), ...(unlocked(unlockS, "moon") ? [{ key: "moon", name: placeName("moon"), here: here === "moon" }] : [])] : null);   // (해금) 길게 누르기가 열린 뒤 처음 몇 번 — 패널이 뜰 때 칸이 반짝여 알려 준다
@@ -2759,6 +2759,6 @@ export function createDomeGL(host, isPaused) {
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
     redraw() { draw(); },   // (bg-dome, 11-10) 정지 상태에서도 현재 자리를 한 번 그린다(낮은 등급 조명 색 바뀜 등)
-    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); hud.remove(); fx.remove(); starlight.remove(); siren.remove(); life.abort(); themeObs.disconnect(); peekObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
+    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); hud.remove(); musicRim.remove(); fx.remove(); starlight.remove(); siren.remove(); life.abort(); themeObs.disconnect(); peekObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
   };
 }

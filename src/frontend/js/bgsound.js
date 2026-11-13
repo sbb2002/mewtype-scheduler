@@ -7,7 +7,13 @@
 // 음원은 wake() 때 한 번 받아 풀어 둔다(합쳐 약 80KB). 아직 못 받았으면 그 소리만 조용히 건너뛴다.
 // 유메미타 플레이어와 겹쳐도 된다(운영자 11-06 계획서 0번 4). 소리 크기 전체 0.9 + 압축기(11-09 운영자 요청으로 키움 — 전엔 0.35).
 
+import { mainMusicActive, subscribeMainMusic } from "./musicpriority.js";
+
+// (bg-dome 시나리오, 11-13) 유메미타 플레이어 곡이 흐르는 동안 돔 효과음 전체를 낮춘다 — 사용자가 고른 곡의 음량은 건드리지 않고 효과음이 양보(운영자 11-13 Claude 추천안 채택).
+const MASTER = 0.9, MASTER_WITH_MUSIC = 0.35;
+const masterLevel = () => (mainMusicActive() ? MASTER_WITH_MUSIC : MASTER);
 let ac = null, master = null;
+subscribeMainMusic(() => { if (ac && master) master.gain.setTargetAtTime(masterLevel(), ac.currentTime, 0.25); });
 const AC = () => window.AudioContext || window.webkitAudioContext;
 const SRC = { alarm: new URL("../assets/bg/sfx/alarm.wav", import.meta.url).href, jump: new URL("../assets/bg/sfx/warp-jump.m4a", import.meta.url).href };
 const buf = {};   // 이름 → AudioBuffer(받는 중이면 Promise)
@@ -26,7 +32,7 @@ export function wake() {
   try {
     if (!ac) {
       const C = AC(); if (!C) return;
-      ac = new C(); master = ac.createGain(); master.gain.value = 0.9;   // (11-09 운영자 「사이렌 · 워프 소리가 너무 작음」) 0.35 → 0.9. 커진 만큼 겹쳐 찢어지지 않게 압축기를 거친다
+      ac = new C(); master = ac.createGain(); master.gain.value = masterLevel();   // (11-09 운영자 「사이렌 · 워프 소리가 너무 작음」) 0.35 → 0.9. 커진 만큼 겹쳐 찢어지지 않게 압축기를 거친다
       const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.knee.value = 12; comp.ratio.value = 6; comp.attack.value = 0.003; comp.release.value = 0.2;
       master.connect(comp); comp.connect(ac.destination);
       document.addEventListener("visibilitychange", () => { if (!ac) return; if (document.hidden) ac.suspend(); else ac.resume(); });

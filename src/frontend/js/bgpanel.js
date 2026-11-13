@@ -90,6 +90,7 @@ export function createUfoPanel() {
     if (charge >= 1 && holding) {
       charge = 0; holding = false; eatClick = true;   // 다 찼다 — 뒤따르는 click(떼기)은 고르기로 치지 않는다
       fill.style.transform = "scaleX(0)"; showChip("space");
+      clearMark("space");
       if (hold) hold();
       return;
     }
@@ -113,6 +114,7 @@ export function createUfoPanel() {
     b.addEventListener("click", () => {
       if (eatClick) { eatClick = false; return; }
       if (locked[t.key]) { b.classList.remove("is-nope"); void b.offsetWidth; b.classList.add("is-nope"); return; }   // 잠김 — 살짝 흔들림만
+      if (on) clearMark(t.key);
       if (on && pick) pick(t.key);
     });
     if (t.key === "space") {
@@ -141,7 +143,7 @@ export function createUfoPanel() {
   lightBtn.hidden = true; navBox.hidden = true;
   list.append(lightBtn, navBox);
   let onLight = null, onNav = null, lightOn = true;
-  lightBtn.addEventListener("click", () => { if (on && onLight) onLight(!lightOn); });
+  lightBtn.addEventListener("click", () => { if (on) clearMark("light"); if (on && onLight) onLight(!lightOn); });
 
   const head = h("div", "ufo-head", [
     h("div", "ufo-head__l", [h("span", "ufo-mono ufo-type ufo-head__tag", ["UFO CONTROL"]), h("span", "ufo-stg ufo-head__title", ["어디로 갈까요?"])]),
@@ -178,10 +180,36 @@ export function createUfoPanel() {
   document.body.appendChild(toastEl);
   let toastT = 0;
 
+  // (bg-dome 시나리오) 해금 표시 — 글 안내 카드 대신(운영자 11-13 「텍스트 설명 최소화」).
+  //   찾은 대상의 모양이 화면 가운데에서 아래(바닥 콘솔 쪽)로 날아가고(fly), 그 칸은 눌러 볼 때까지 빛난다(mark → .is-fresh).
+  //   패널이 꺼져 있는 동안은 화면 아래에 「벌리기」 손짓 신호(.ufo-call)가 맥박 친다 — 콘솔로 다가가라는 뜻. 칸을 눌러 쓰면 그 표시는 끝(clearMark).
+  //   길게 누르기(성간 이동)가 열렸으면 패널이 뜰 때 초행성X 칸이 저절로 반쯤 차올랐다 빠진다(demoHold) — 「꾹 누르면 찬다」 를 보여 준다.
+  const marks = new Set();
+  let demoPending = false, demoT = 0;
+  const call = h("div", "ufo-call", [
+    s("svg", { width: 30, height: 30, viewBox: "0 0 24 24", fill: "none", stroke: "#4fe3ff", "stroke-width": "1.6", "stroke-linecap": "round", "aria-hidden": "true" }, [s("path", { d: "M8 8 4 4M4 4v4M4 4h4M16 16l4 4M20 20v-4M20 20h-4" })]),
+  ], { "aria-hidden": "true" });
+  document.body.appendChild(call);
+  const markEl = (key) => (key === "light" ? lightBtn : tiles[key]);
+  const syncCall = () => call.classList.toggle("is-on", marks.size > 0 && !on);
+  function clearMark(key) {
+    if (!marks.delete(key)) return;
+    markEl(key)?.classList.remove("is-fresh");
+    if (key === "space") demoPending = false;
+    syncCall();
+  }
+  const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function runDemo() {
+    if (!on || holding || warping || charge > 0 || !holdable) return;
+    demoPending = false;
+    if (reduce()) return;
+    // 0.7초에 55% 까지 차고 0.45초에 빠진다 — 진짜 충전과 같은 칠(.ufo-tile__fill)
+    fill.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(.55)", offset: 0.6 }, { transform: "scaleX(0)" }], { duration: 1150, easing: "ease-in-out" });
+  }
   let on = false, hintA = -1, hintGone = false;
   return {
     get on() { return on; },
-    remove() { root.remove(); hint.remove(); toastEl.remove(); guideEl.remove(); clearTimeout(toastT); clearTimeout(guideT); },
+    remove() { root.remove(); hint.remove(); toastEl.remove(); guideEl.remove(); call.remove(); clearTimeout(toastT); clearTimeout(guideT); clearTimeout(demoT); },
     set(v) {
       if (v === on) return;
       on = v;
@@ -191,6 +219,9 @@ export function createUfoPanel() {
       root.inert = !v;
       root.setAttribute("aria-hidden", v ? "false" : "true");
       if (!v && root.contains(document.activeElement)) document.activeElement.blur();
+      syncCall();
+      clearTimeout(demoT);
+      if (v && demoPending) demoT = setTimeout(runDemo, 900);   // 칸이 차례로 나타난 뒤
     },
     /** 칸을 누르면 부를 함수(key = "pink" | "space" | "earth") */
     onPick(fn) { pick = fn; },
@@ -261,6 +292,26 @@ export function createUfoPanel() {
         b.addEventListener("click", () => { if (on && onNav) onNav(it.key); });
         return b;
       }));
+    },
+    /** (시나리오) 새로 열린 칸 표시 — key = "space" | "earth" | "light". demo = 길게 누르기 시연을 다음에 패널이 뜰 때 한 번 */
+    mark(key, demo = false) {
+      const e = markEl(key); if (!e) return;
+      marks.add(key); e.classList.add("is-fresh");
+      if (demo) demoPending = true;
+      syncCall();
+    },
+    /** (시나리오) 찾은 대상의 모양이 화면 가운데에서 아래(바닥 콘솔 쪽)로 날아가 사라진다. key = 아이콘("space" 토성 · "earth" 지구 · 그 밖 = 빛 점) */
+    fly(key) {
+      if (reduce()) return;
+      const ico = h("div", "ufo-fly", [ICONS[key] ? ICONS[key]() : h("i")], { "aria-hidden": "true" });
+      document.body.appendChild(ico);
+      const dy = Math.round(window.innerHeight * 0.36);
+      const a = ico.animate([
+        { transform: "translate(-50%, -50%) scale(1.8)", opacity: 0 },
+        { transform: "translate(-50%, -50%) scale(1.5)", opacity: 1, offset: 0.25 },
+        { transform: `translate(-50%, calc(-50% + ${dy}px)) scale(.5)`, opacity: 0 },
+      ], { duration: 1300, easing: "cubic-bezier(.5,0,.6,1)" });
+      a.onfinish = a.oncancel = () => ico.remove();
     },
     /** (해금) 화면 위쪽에 잠깐 뜨는 한 줄 알림(해금 · 도착). 2.2초, 새 알림이 오면 바꿔 쓴다 */
     toast(text) {

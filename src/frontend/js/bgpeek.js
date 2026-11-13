@@ -86,11 +86,27 @@ function show() {
 
 const HOLD_MS = 500, HOLD_SLOP = 10;
 const CONTENT = "a, button, input, textarea, select, [role=button], [contenteditable], .card, .tcard, .lane__item, .lane__header";
+// (bg-dome 시나리오, 11-13) 준비가 되면 레인이 살짝 떠오르고(css .bgp-armed) 레인 위로 빛 물결이 아래에서 위로 흐른다 — 「이제 위로 밀어」 를 글 없이.
+// 물결은 레인 위에 겹친 고정 위치 판(.bgp-wave) — 레인은 스크롤 영역이라 가상 요소로는 내용과 같이 움직인다.
+let wave = null;
+function showWave(lane) {
+  hideWave();
+  if (REDUCE.matches) return;
+  const r = lane.getBoundingClientRect();
+  wave = document.createElement("div");
+  wave.className = "bgp-wave";
+  wave.setAttribute("aria-hidden", "true");
+  Object.assign(wave.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+  wave.appendChild(document.createElement("i"));
+  document.body.appendChild(wave);
+}
+function hideWave() { if (wave) { wave.remove(); wave = null; } }
 function cancelTouch() {
   if (touch) {
     clearTimeout(touch.timer);
     touch.lane.classList.remove("bgp-armed");
   }
+  hideWave();
   touch = null;
 }
 function onTouchStart(e) {
@@ -104,6 +120,7 @@ function onTouchStart(e) {
     if (touch !== g || !lane.isConnected || Math.abs(lane.scrollTop - g.scrollTop) > 2) { cancelTouch(); return; }
     g.armed = true;
     lane.classList.add("bgp-armed");
+    showWave(lane);
     if (navigator.vibrate && !REDUCE.matches) try { navigator.vibrate(8); } catch {}
   }, HOLD_MS);
 }
@@ -163,7 +180,8 @@ export function initBgPeek() {
   cue.id = "bg-peek-cue";
   cue.hidden = true;
   cue.setAttribute("aria-hidden", "true");
-  cue.innerHTML = `<div class="bgp-cue__hand"><i></i><i></i><i></i></div><span class="bgp-cue__txt">빈 곳을 꾹 누른 채 위로 밀어 배경 보기</span>`;
+  // (bg-dome 시나리오, 11-13 「텍스트 설명 최소화」) 글 없이 손짓만 — 손끝(점)이 꾹 눌려 둘레가 차오른 뒤(길게 누르기) 위로 미끄러지고, 꺾쇠 셋이 위로 흐른다
+  cue.innerHTML = `<div class="bgp-cue__hand"><i></i><i></i><i></i></div><div class="bgp-cue__finger"><b></b></div>`;   // 고정 문자열(데이터 아님)
   document.body.appendChild(cue);
   if (PHONE.matches && !cueSeen()) setTimeout(showCue, CUE_SHOW_MS);
 
