@@ -1,6 +1,6 @@
-# 시선 튐 — 적용할 방법론 제안 (2026-11-13, Claude · 운영자 결정 대기)
+# 시선 튐 — 적용할 방법론 제안 (2026-11-13, Claude) — 진행 · 재생 · 폰 시험 합격(11-13), 동작 설명 정본 = ALGORITHM.md
 
-근거 문헌 = `LITERATURE.md`(S 번호), 현상 = `../gaze-jump/REPORT.md`. **아직 구현하지 않았다.**
+근거 문헌 = `LITERATURE.md`(S 번호), 현상 = `../gaze-jump/REPORT.md`. 구현 = `bg-dome-claude-test` `b73ed99`, 결과 = `replay/RESULT.md` · `phone-2026-11-13/RESULT.md`. 아래 6장 질문 1 · 3 은 운영자가 「진행 · bg-dome-claude-test 위」로 답했다(11-13), 2 는 이 방식(정지 중 차이 남김)으로 시험해 합격.
 
 ## 1. 제안: 「멈췄을 때 재고, 움직일 때 반영하는 방위 오프셋」
 

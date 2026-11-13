@@ -2,13 +2,36 @@
 
 다음 세션이 이어서 하는 작업이다. 여기부터 읽는다. 다른 PC 에서도 이 문서와 브랜치만으로 이어 갈 수 있게 썼다.
 
-## 11-13 — 시선 튐 참고문헌 · 해결 방법 제안 (다음 세션은 여기부터)
+## 11-13 — 시선 튐 해결(폰 합격) · Codex 디자인 개선안과 합칠 것 (다음 세션은 여기부터)
 
-- 자료 = **`ref/bg-dome/gaze-jump-lit/`** — `LITERATURE.md`(Claude · Codex · agy 조사 종합, 원문 확인 수준 표시) · `METHOD.md`(제안 방법) · `raw/`(요청서 · Codex · agy 원본).
-- **agy 보고서는 인용 다수가 원문에 없다** — 근거로 쓰지 말 것(`LITERATURE.md` 3장).
-- 제안 = **움직임 연동 방위 보정**: 화면 방위 = 상대 방위 + 보정량. 보정량은 멈췄을 때만 재고, 돌릴 때만 돌린 양에 비례해 반영(Foxlin 1997 특허 · AeroSense 98 PPF 와 같은 구조). 고도는 안 고친다(실측: 계단 때 고도 변화 ≤ 0.14°).
-- **구현 안 함 — 운영자 결정 대기**(진행 여부 · 정지 중 남는 차이 허용 여부 · 구현 브랜치). 수치(`ω_still` · `k` 등)는 문헌에 폰용 값이 없어 기록 CSV 재생 시험으로 정한다.
-- Codex 가 다른 PC 에서 한 구현 · 데이터는 운영자 말로 「나중에 활용 가능」(11-13). 아직 원격에 없음.
+### 시선 튐 — 해결, 운영자 폰 합격(11-13)
+- 방법 = **움직임 연동 방위 보정***: 화면 방위 = 상대 방위(자력계 없음) + 보정량. 보정량은 폰이 멈췄을 때만 재고, 화면엔 돌릴 때만 돌린 양에 비례해 반영. 고도는 안 고친다.
+  \* Claude 제안 이름 — 운영자 확정 전, `docs/TERMINOLOGY.md` 미등록.
+- **코드 = 브랜치 `bg-dome-claude-test` `b73ed99`(푸시됨)** — `feat/bg-dome` `f9eb7e4` 위 커밋 4개. `js/bgyawfix.js`(보정기) · `js/bggyro.js`(상대 센서 · 연결) · `scripts/replay_yawfix.mjs`(재생기) + 11-12 기록기.
+- 문서(`ref/bg-dome/gaze-jump-lit/`):
+  | 파일 | 내용 |
+  |---|---|
+  | `ALGORITHM.md` | **동작 설명 정본** — 데이터 흐름 순서 · 인자 · 남은 일 |
+  | `METHOD.md` | 왜 이 방식인가 · 버린 안 |
+  | `LITERATURE.md` · `raw/` | 참고문헌 종합(원문 확인 수준) · Claude/Codex/agy 원본 — **agy 인용은 다수가 원문에 없음** |
+  | `replay/RESULT.md` | 11-12 기록 재생: 정지 중 혼자 움직임 107° → 0.3° |
+  | `phone-2026-11-13/RESULT.md` | 폰 시험 3세션: 시작 2초 뒤 정지 중 0.5초에 0.43° 이하. 「튐」 표시 0회 |
+- **남은 일**: ① 시작 순간 튐(시작 2초 안 최대 16° — 처음 맞추기 + 센서 켜진 직후 큰 계단, 개선안 ⓐⓑ 운영자 결정 대기, `ALGORITHM.md` 5장) ② 기록 전용 코드 · `?yawfix=0` 남길지 ③ iPhone · 다른 기기 · 망원.
+
+### ⚠ Codex 작업본 — 다른 PC 에 있다, 합칠 때 반드시 같이 (운영자 11-13)
+- 운영자 확인: **Codex 작업은 보정 문제는 해결하지 못했지만 디자인 개선안이 들어 있다.** 그래서 `feat/bg-dome` 에 들어갈 최종본 = **`feat/bg-dome` + Codex 디자인 개선안 + 위 보정(Claude)** 셋을 함께.
+- Codex 작업본은 **다른 PC 의 bg-dome 작업 폴더에 푸시되지 않은 채** 있다(11-12 부터). 이 PC · 원격에서는 볼 수 없어 **파일 이름 · 바뀐 곳 · 디자인 개선안의 내용은 모른다**(확인 필요).
+- **그 PC 에서 할 일(순서대로)**:
+  1. `git fetch origin` — devpapers 와 `bg-dome-claude-test` 를 받는다. 이 HANDOFF 의 이 절을 먼저 읽는다.
+  2. Codex 작업 폴더에서 `git status` · `git diff` · `git log origin/feat/bg-dome..` 로 바뀐 파일을 확인한다. 기준이 `f9eb7e4` 인지도 본다.
+  3. 코드는 **새 브랜치로만** 올린다(`feat/bg-dome` 에 바로 푸시 금지). 이름 예시 `test/bg-dome-codex-design`(이름은 운영자 확인). 커밋을 「디자인 개선」 과 「보정 시도」 로 나눌 수 있으면 나눈다 — 보정 시도는 쓰지 않을 가능성이 높다.
+  4. 데이터 · 플롯 · 보고서는 devpapers **`ref/bg-dome/gaze-jump-codex/`**(새 폴더)에. 기존 `gaze-jump/` · `gaze-jump-lit/` 파일을 덮어쓰지 않는다.
+  5. 이 절 아래에 「Codex 작업본 위치 · 디자인 개선안 목록 · 바뀐 파일」 을 적는다.
+- **합칠 때 주의(추정 — Codex 코드를 못 봐서 확인 안 됨)**: Codex 가 `bggyro.js` · `bgdomegl.js`(`updateView` 근처)를 고쳤다면 이 보정과 같은 곳이라 충돌할 수 있다. 원칙 = 방위 보정은 Claude 안(`bgyawfix.js` · `bggyro.js` 변경), 디자인은 Codex 안. Codex 의 보정 시도 코드는 운영자 확인 뒤 뺀다.
+- 합친 뒤 확인: `node src/frontend/js/bgyawfix.selfcheck.mjs` · `bggyro.selfcheck.mjs`, 기록 재생(`scripts/replay_yawfix.mjs`), 운영자 폰에서 `?debug=True` 로 다시 기록해 `phone-2026-11-13/analyze_phone.py` 로 비교.
+
+### 참고(11-13 앞부분)
+- 참고문헌 조사는 Claude · Codex · agy 셋이 따로 했다(운영자 지시로 herdr 로 요청). Codex 조사(`raw/codex.md`)는 이 PC 에서 새로 한 것이고, 다른 PC 의 Codex 작업본과는 별개다.
 
 ## 11-12 — 시선 튐 조사
 
