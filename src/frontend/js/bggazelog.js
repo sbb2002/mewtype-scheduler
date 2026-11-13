@@ -12,7 +12,8 @@
 //   view = 프레임마다: 앱이 쓰는 방위°(gyroAbs, 편각 포함), 고도°, 화면에 그린 방위°, 고도°, 원천(sensor/event/ios/flag), 배율
 //   mark = 「튐」 버튼 누름: 누른 횟수
 //   info = 시작 정보 · 센서 오류
-import { forwardOfQuat, gyroAbs, gyroDebug } from "./bggyro.js";
+//   fix  = 프레임마다 움직임 연동 방위 보정 상태: 사용 중(1/0), 반영 보정량 b°, 목표 ê°, 회전 속도°/s, 정지(1/0)  (11-13 추가)
+import { forwardOfQuat, gyroAbs, gyroDebug, yawFix, yawFixActive } from "./bggyro.js";
 
 const RAD = 180 / Math.PI;
 const f2 = (v) => (v == null || Number.isNaN(v) ? "" : Math.round(v * 100) / 100);
@@ -113,9 +114,11 @@ export function startGazeLog(getView) {
   function frame(now) {
     const a = gyroAbs(), v = getView();
     row("view", a ? f2(a.yaw * RAD) : "", a ? f2(a.pitch * RAD) : "", f2(v.yaw * RAD), f2(v.pitch * RAD), gyroDebug.src || "", f2(v.tele));
+    const fx = yawFix.debug(), act = yawFixActive();
+    row("fix", act ? 1 : 0, fx.b == null ? "" : f2(fx.b * RAD), fx.eHat == null ? "" : f2(fx.eHat * RAD), f2(fx.w * RAD), fx.still ? 1 : 0);
     if (now - lastStat > 500) {
       lastStat = now;
-      stat.textContent = `REC ${sent}${fail ? " 전송실패 " + fail : ""}\nsrc ${gyroDebug.src || "-"} · 튐 ${marks}\naos ${cnt.aos} ros ${cnt.ros} mag ${cnt.mag}\ndoa ${cnt.doa} do ${cnt.do} dm ${cnt.dm}`;
+      stat.textContent = `REC ${sent}${fail ? " 전송실패 " + fail : ""}\nsrc ${gyroDebug.src || "-"} · 보정 ${yawFixActive() ? "ON" : "off"} · 튐 ${marks}\naos ${cnt.aos} ros ${cnt.ros} mag ${cnt.mag}\ndoa ${cnt.doa} do ${cnt.do} dm ${cnt.dm}`;
       stat.style.background = fail ? "rgba(200,0,0,.8)" : "rgba(0,0,0,.6)";
     }
     requestAnimationFrame(frame);
