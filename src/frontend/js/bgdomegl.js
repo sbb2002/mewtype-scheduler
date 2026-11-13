@@ -1204,6 +1204,12 @@ const THEMES = {
 //   점과 같은 규칙(timetable.js fillDot · css/timetable.css .wk2__seg): MEMBER_DOT_COLORS 의 어둡게 / 밝게 값을 지금 테마로 고르고,
 //   표에 없는 멤버(아라레)는 그 레인의 --lane-color(아바타 평균색, render.js). 레인 색이 아직 없으면(아바타 전) config.js MEMBER_LIGHT_COLORS 로 대신한다.
 //   테마 · 라이브 데이터가 바뀌면 다시 읽는다(memberHexReset).
+// (11-13 운영자 「노노카 조명을 좀 더 분홍빛으로, 유노는 구분되도록 좀 더 붉은 빛으로」) 돔 조명에만 쓰는 예외 색 — 타임테이블 점 색은 그대로 둔다.
+//   노노카 점 색(어둡게 #FFC4DC)은 흰 평소 조명과 거의 구별이 안 되고, 유노(#FF6688)와 둘 다 분홍 계열이라 조명에선 갈라 둔다.
+const LIGHT_COLOR_OVERRIDE = {
+  nonoka: { dark: "#FF4DAA", light: "#DB3F92" },   // 진한 분홍(마젠타 쪽)
+  yuno:   { dark: "#FF2B2B", light: "#CC1A1A" },   // 빨강
+};
 let memberHexCache = null, colorProbe = null, memberRetry = null;   // memberRetry = 대신 색을 쓴 경우 잠시 뒤 다시 읽을 함수(장면이 정한다)
 function cssHex(v) {
   if (!v || typeof document === "undefined") return null;
@@ -1218,7 +1224,7 @@ function memberHex() {
   let partial = false;
   const border = cssHex(getComputedStyle(document.documentElement).getPropertyValue("--color-border").trim());
   for (const k of FALLBACK_CHANNEL_ORDER) {
-    const dc = MEMBER_DOT_COLORS[k];
+    const dc = LIGHT_COLOR_OVERRIDE[k] || MEMBER_DOT_COLORS[k];
     if (dc) { out[k] = light ? dc.light : dc.dark; continue; }
     const lane = document.querySelector(`#board .lane[data-channel="${k}"]`);
     const c = lane ? cssHex(getComputedStyle(lane).getPropertyValue("--lane-color").trim()) : null;
@@ -1233,7 +1239,7 @@ const memberHexReset = () => { memberHexCache = null; };
 const liveRGB = (key) => { const c = key && memberHex()[key]; return c ? hex(c) : [0, 0, 0]; };
 const LIGHT_IDLE = 0.2;   // (11-13) 방송 중이 아닌 조명의 밝기 배율(0.4 → 0.2, 운영자 「투명도를 더 올려」)
 const LIGHT_LIVE = 1.3;   // (11-13) 방송 중인 조명의 밝기 배율(운영자 「조금 더 진하게」)
-const LIVE_MIN = 0.55;    // (11-13) 방송 중 맥동의 바닥 — 흰 평소 색까지 빠지지 않고 멤버 색이 늘 남는다(0 → 0.55)
+const LIVE_MIN = 0.75;    // (11-13) 방송 중 맥동의 바닥 — 흰 평소 색까지 빠지지 않고 멤버 색이 늘 남는다(0 → 0.55 → 0.75)
 
 // ── 공중 무늬(콘의 파스텔 외곽선 장식에서 모양 규칙만 따왔다) ──
 const NS = "http://www.w3.org/2000/svg";
@@ -1713,6 +1719,8 @@ export function createDomeGL(host, isPaused) {
   // (bg-dome, 11-10) 라이브 조명 — 멤버가 라이브면 그 바닥 조명만 멤버 색으로 맥동(bglive.js 의 값). 경보 빨강이 우선: alarmK 만큼 라이브 색을 뺀다.
   //   점멸 = high 등급 또는 배경 보기 중. 낮은 등급 + 예고보드 = 점멸 없이 멤버 색으로 켜 두기(다시 그리는 건 상태가 바뀔 때만).
   let liveDirty = true, liveDrawAt = -Infinity;
+  // (11-13 운영자 「테스트로 모든 조명의 색을 적용」) 확인용 ?bglive=all — 실제 데이터와 상관없이 다섯 조명을 모두 방송 중으로 켠다(병합 전 정리 대상)
+  if (QS.get("bglive") === "all") forceLive(FALLBACK_CHANNEL_ORDER);
   const liveCol = new Float32Array(15), liveK = new Float32Array(5), liveA = new Float32Array(5);
   const liveAnimating = (peek) => !reducedMotion.matches && (!isLow() || peek) && (lastLive() || []).some((s) => s && s.live);
   function liveUniforms() {
