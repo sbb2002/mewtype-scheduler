@@ -1066,14 +1066,13 @@ function _renderFeed(fresh) {
         const live = () => S === s && s.open && el.isConnected;
         const flash = () => {
           if (!live()) return;
-          el.classList.add("is-cxtarget");
-          _anim(el, "is-cxhit");
+          _anim(el, "is-cxhit");   // 한 번 크게 번쩍이고 끝나면 클래스를 떼어 테두리가 원래대로 돌아간다
           // PC 시트는 X 카드가 불러와지며 몇 초 더 자란다 — 번쩍임이 끝날 때 안내 줄까지 보이게 한 번 더 맞춘다
           setTimeout(() => {
             if (!live()) return;
             const want = Math.max(0, Math.min(center(), feed.scrollHeight - feed.clientHeight));
             if (Math.abs(feed.scrollTop - want) > 16) feed.scrollTo({ top: want, behavior: _reduce() ? "auto" : "smooth" });
-          }, _reduce() ? 0 : 2150);
+          }, _reduce() ? 0 : 1550);
         };
         setTimeout(() => {
           if (!live()) return;
