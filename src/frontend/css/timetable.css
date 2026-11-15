@@ -902,7 +902,64 @@ html.wk-lock .tt-pop { z-index: 900; }          /* 시트 위에 카드 팝업 *
   .wk-scrim, .wk-sheet { transition: none !important; }
 }
 
-/* Premiere edges in the timetable and mobile cards. */
-.tt-blk.tt-blk--premiere, .tcard.tcard--premiere { border: 2px solid #facc15; }
+/* ── (v4.11.14) 금색 프리미어 태그 ─────────────────────────────────────
+   테두리는 시간 상태(빨강 = 방송 중 · 호박색 = 1시간 이내 · 회색 = 종료)만 나타낸다. 프리미어는 테두리를 쓰지 않고 이 태그로만.
+   금속 그라디언트 + 3.2초마다 한 번 지나가는 빛줄기. 빛 · 반짝이 별은 clip-path 로 태그 모양 안에서만 보인다(밖으로 번지지 않게). */
+.gold {
+  position: relative; overflow: hidden; isolation: isolate;
+  display: inline-flex; align-items: center; gap: 4px;
+  border-radius: 999px; clip-path: inset(0 round 999px);
+  font-weight: 800; letter-spacing: 0.06em; color: #3b2a04;
+  background: linear-gradient(160deg, #fff1b8 0%, #f2cf63 28%, #c9952b 55%, #f6d77a 78%, #b98420 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 244, 200, 0.75), inset 0 -1px 0 rgba(120, 80, 10, 0.35);
+  text-shadow: 0 1px 0 rgba(255, 250, 225, 0.55);
+}
+.gold::after {
+  content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: -60%; width: 40%; transform: skewX(-22deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9) 50%, transparent);
+  animation: gold-sweep 3.2s ease-in-out infinite; pointer-events: none;
+}
+@keyframes gold-sweep { 0%, 55% { left: -60%; } 85%, 100% { left: 130%; } }
+.gold__spk { width: 9px; height: 9px; flex: none; fill: #fffbe6; animation: gold-twinkle 3.2s ease-in-out infinite; }
+@keyframes gold-twinkle { 0%, 60%, 100% { transform: scale(0.7); opacity: 0.7; } 75% { transform: scale(1) rotate(45deg); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .gold::after { display: none; } .gold__spk { animation: none; } }
+.tt-tag.tt-tag--premiere { padding: 1px 8px; font-size: 0.64rem; }
+.tcard__pill.tcard__pill--premiere { padding: 4px 11px; font-size: 0.74rem; }
+.tt-blk__th { position: relative; }
+.tt-blk__prem { position: absolute; right: 3px; bottom: 3px; padding: 1px 5px; font-size: 0.5rem; letter-spacing: 0.04em; }
 
-.tcard__pill.tcard__pill--premiere { background: #facc15; color: #1a1a1a; }
+/* ── (v4.11.14) 취소된 예고 ─────────────────────────────────────────────
+   그날 끝(KST 04:00)까지 남는다. 도넛 = 원래 모양 그대로 회색으로 가득 찬 원 + 「취소됨」. 시각 취소선 · 썸네일 흐림.
+   누르면 YouTube 대신 취소 글(트윗 시트). 처음 볼 때(.is-cx-in)만 회색이 차오르고 글자가 톡 들어온다. */
+.tcard--cx { cursor: pointer; }
+.tcard--cx .tcard__th { filter: grayscale(0.85) brightness(0.7); }
+.tcard--cx .tcard__when > b:first-child, .tcard--cx .tcard__ti { color: var(--color-ended); }
+.tcard--cx .tcard__when > b:first-child { position: relative; }
+.tcard--cx .tcard__when > b:first-child::after {
+  content: ""; position: absolute; left: -2px; right: -2px; top: 54%; height: 1.5px;
+  background: var(--color-ended); transform-origin: left center;
+}
+.tcard__cxhint { font-size: 0.7rem; color: var(--color-text-muted); }
+.tcard__ring.tcard__ring--cx { --p: 100; background: conic-gradient(var(--color-ended) calc(var(--p) * 1%), var(--color-ring-track) 0); }
+.tcard__ring--cx b { color: var(--color-ended); font-size: 0.72rem; font-weight: 600; letter-spacing: -0.02em; }
+.tcard--big .tcard__ring--cx b { font-size: 0.78rem; }
+.tcard.is-cx-in .tcard__ring--cx { animation: cx-fill 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.tcard.is-cx-in .tcard__ring--cx span { animation: cx-pop 0.45s cubic-bezier(0.25, 1.4, 0.45, 1) 0.45s both; }
+.tcard.is-cx-in .tcard__when > b:first-child::after { animation: cx-strike 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) 0.55s both; }
+@keyframes cx-fill { from { --p: 0; } to { --p: 100; } }
+@keyframes cx-pop { from { opacity: 0; transform: scale(0.7); } to { opacity: 1; transform: none; } }
+@keyframes cx-strike { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.is-cx-nope { animation: cx-nope 0.4s ease; }
+@keyframes cx-nope { 25% { translate: -3px 0; } 75% { translate: 3px 0; } }
+.tt-blk.tt-blk--cx { border-style: dashed; border-color: color-mix(in srgb, var(--color-ended) 70%, transparent); background: var(--color-bg-secondary); }
+.tt-blk--cx .tt-blk__th { filter: grayscale(0.85) brightness(0.7); }
+.tt-blk--cx .tt-blk__time { text-decoration: line-through; text-decoration-color: var(--color-ended); color: var(--color-ended); }
+.tt-blk--cx .tt-blk__n { color: var(--color-ended); }
+.tt-blk__rel.tt-blk__rel--cx { color: var(--color-ended); font-weight: 700; }
+.tt-pop__rg.is-cx { text-decoration: line-through; }
+.tt-pop__cx { margin-left: 6px; display: inline-block; text-decoration: none; font-weight: 700; color: var(--color-ended); }
+.tt-pop__btn.tt-pop__btn--cx { background: var(--color-raised); color: var(--color-text); border: 1px solid var(--color-raised-edge); cursor: pointer; }
+.tt-pop__btn.tt-pop__btn--cx:hover { background: var(--color-hover); }
+@media (prefers-reduced-motion: reduce) {
+  .tcard.is-cx-in .tcard__ring--cx, .tcard.is-cx-in .tcard__ring--cx span, .tcard.is-cx-in .tcard__when > b:first-child::after, .is-cx-nope { animation: none; }
+}

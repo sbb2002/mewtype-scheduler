@@ -198,6 +198,45 @@ export function itemKeys(item, order) {
 const isCollab = (item) => item.kind === "collab" || (Array.isArray(item.collab_with) && item.collab_with.length > 0);
 const shortName = (ch) => ((ch && ch.name_ko) || "").split(" ").pop();
 const hasVideo = (item) => !!item.video_id;
+/* (v4.11.14) 취소된 예고 — 백엔드가 그날 끝(KST 04:00)까지 cancelled 를 붙여 남긴다(SPEC 계약 A) */
+const isCancelled = (item) => !!(item && item.cancelled);
+/** (v4.11.14) 취소 글을 트윗 시트에서 연다 — tweets.js 가 받는 문서 이벤트(직접 import 하면 node self-check 가 DOM 없이 깨진다).
+ *  동기로 처리돼 열었으면 true, 시트에 그 글이 없으면 false */
+export function openCancelTweet(ck, id, from, item) {
+  const d = { ck, id, from, item, handled: false };
+  document.dispatchEvent(new CustomEvent("mew:cancel-tweet", { detail: d }));
+  return d.handled;
+}
+const SEEN_CX = new Set();   // 「취소됨」으로 바뀌는 움직임을 이미 보여 준 예고 id — 폴링으로 다시 그려도 반복하지 않는다
+const cxHasTweet = (item) => !!(item.cancelled && (item.cancelled.tweet_id || item.cancelled.tweet_url));
+/** 금색 프리미어 태그 — 빛줄기가 태그 안에서만 지나간다(css .gold). small = 블록 썸네일용(별 없음) */
+export function goldTag(cls, text, star = false) {
+  const t = el("span", `gold ${cls}`, "");
+  if (star) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 10 10");
+    svg.setAttribute("class", "gold__spk");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", "M5 0l1.2 3.8L10 5 6.2 6.2 5 10 3.8 6.2 0 5l3.8-1.2z");
+    svg.appendChild(path);
+    t.appendChild(svg);
+  }
+  t.appendChild(document.createTextNode(text));
+  return t;
+}
+/** 취소된 예고를 눌렀을 때 — 취소 글을 트윗 시트에서 열고, 시트에 없으면(48시간 지남 등) X 글 주소를 새 탭으로. 글이 없으면 살짝 흔든다 */
+function onCancelledTap(e, node, item) {
+  e.preventDefault();
+  e.stopPropagation();
+  const cx = item.cancelled || {};
+  if (openCancelTweet(item.channel_key, cx.tweet_id, node, item)) return;
+  if (cx.tweet_url) { window.open(cx.tweet_url, "_blank", "noopener"); return; }
+  node.classList.remove("is-cx-nope");
+  void node.offsetWidth;
+  node.classList.add("is-cx-nope");
+}
 
 function titleText(item, ctx) {
   if (item.title) return item.title_ko && item.title_ko !== item.title ? `${item.title_ko}　—　${item.title}` : item.title;
@@ -215,6 +254,7 @@ function tagsFor(entry, state) {
   const add = (cls, text) => out.push(el("span", `tt-tag ${cls}`, text));
   const it = entry.item;
   if (state === "ended") add("tt-tag--end", "종료");
+  if (it.is_premiere && state !== "ended") out.push(goldTag("tt-tag tt-tag--premiere", "프리미어"));   // (v4.11.14) 테두리 대신 금색 태그
   if (isCollab(it)) add("tt-tag--collab", "합동");
   if (it.membership) add("tt-tag--mem", "회원 전용");
   if (state === "upcoming" && !hasVideo(it)) add("tt-tag--ann", "예고");
@@ -306,9 +346,18 @@ function showCardPop(entry, state, owner, pin, ctx, rowKey, dated = false) {
   nm.append(faces, el("b", "", keys.map((k) => shortName(ctx.channels[k])).join(" · ") || shortName(ch)));
   for (const t of (state === "live" ? [el("span", "tt-tag tt-tag--live", "LIVE")] : []).concat(tagsFor(entry, state))) nm.appendChild(t);
   body.appendChild(nm);
-  body.appendChild(el("div", "tt-pop__rg", rangeLabel(entry, state, dated)));
+  const rg = el("div", "tt-pop__rg" + (isCancelled(it) ? " is-cx" : ""), rangeLabel(entry, state, dated));
+  if (isCancelled(it)) rg.appendChild(el("span", "tt-pop__cx", "취소됨"));
+  body.appendChild(rg);
   body.appendChild(dated ? popTitle(it, ctx) : el("div", "tt-pop__ti", titleText(it, ctx)));
-  if (url) {
+  if (isCancelled(it)) {                          // (v4.11.14) 취소된 예고 — 영상 대신 취소 글
+    if (cxHasTweet(it)) {
+      const btn = el("button", "tt-pop__btn tt-pop__btn--cx", "취소 글 보기");
+      btn.type = "button";
+      btn.addEventListener("click", (e) => { const o = cpopOwner; closeCardPop(); onCancelledTap(e, o || btn, it); });
+      body.appendChild(btn);
+    } else body.appendChild(el("span", "tt-pop__none", "취소된 방송입니다"));
+  } else if (url) {
     const btn = el("a", "tt-pop__btn", "▶ YouTube에서 보기");
     btn.href = url; btn.target = "_blank"; btn.rel = "noopener";
     body.appendChild(btn);
@@ -397,23 +446,28 @@ function blockEl(entry, state, ctx, geo, rowKey) {
   const it = entry.item;
   const b = el("div", `tt-blk tt-blk--${state}`);
   if (isCollab(it)) b.classList.add("tt-blk--collab");
-  if (it.is_premiere) b.classList.add("tt-blk--premiere");
-  if (state === "upcoming" && entry.start - ctx.nowMs < SOON_MS && entry.start >= ctx.nowMs) b.classList.add("tt-blk--soon");
+  const cx = isCancelled(it);
+  if (cx) b.classList.add("tt-blk--cx");          // (v4.11.14) 점선 테두리 · 시각 취소선 · 「취소됨」
+  if (!cx && state === "upcoming" && entry.start - ctx.nowMs < SOON_MS && entry.start >= ctx.nowMs) b.classList.add("tt-blk--soon");
   b.setAttribute("role", "button");
   b.tabIndex = 0;
   b.setAttribute("aria-haspopup", "dialog");
   b.style.left = `${(geo.l / TRACK_PX) * 100}%`;
   b.style.width = `${(geo.w / TRACK_PX) * 100}%`;
-  b.setAttribute("aria-label", `${titleText(it, ctx)} · ${rangeLabel(entry, state)}`);
+  b.setAttribute("aria-label", `${titleText(it, ctx)} · ${rangeLabel(entry, state)}` + (cx ? " · 취소됨" + (cxHasTweet(it) ? ", 누르면 취소 글" : "") : ""));
 
-  b.appendChild(thumbEl(it, "tt-blk__th", ctx));
+  const bth = thumbEl(it, "tt-blk__th", ctx);
+  if (it.is_premiere && state !== "ended") bth.appendChild(goldTag("tt-blk__prem", "PREMIERE"));   // (v4.11.14) 테두리 대신 금색 배지
+  b.appendChild(bth);
   const tx = el("div", "tt-blk__tx");
   const head = el("div", "tt-blk__t");
   if (state === "live") head.appendChild(el("span", "tt-tag tt-tag--live", "LIVE"));
   else head.appendChild(el("span", "tt-blk__time", entry.end ? `${hm(entry.start)}~${hm(entry.end)}` : hm(entry.start)));
   for (const t of tagsFor(entry, state)) head.appendChild(t);
   tx.appendChild(head);
-  if (state === "upcoming") {   // 2번째 줄 (king.js 가 「지각」 자리로 쓴다). 라이브 · 종료 블록은 빈 줄(.tt-blk__sp)로 제목 높이를 맞춘다
+  if (state === "upcoming" && cx) {
+    tx.appendChild(el("div", "tt-blk__rel tt-blk__rel--cx", "✕ 취소됨"));
+  } else if (state === "upcoming") {   // 2번째 줄 (king.js 가 「지각」 자리로 쓴다). 라이브 · 종료 블록은 빈 줄(.tt-blk__sp)로 제목 높이를 맞춘다
     const min = Math.max(0, Math.round((entry.start - ctx.nowMs) / 60000));
     const late = entry.start < ctx.nowMs;
     tx.appendChild(el("div", "tt-blk__rel" + (late ? " is-late" : ""), late ? "지각" : startsIn(min)));
@@ -425,9 +479,13 @@ function blockEl(entry, state, ctx, geo, rowKey) {
   tx.appendChild(n);
   b.appendChild(tx);
 
-  wirePop(b, entry, state, ctx, rowKey);   // (v4.9.6) 팝업 연결은 이 블록 · 이후 예고 점이 함께 쓴다
+  if (cx) {                                 // (v4.11.14) 팝업 대신 취소 글(트윗 시트)
+    b.removeAttribute("aria-haspopup");
+    b.addEventListener("click", (e) => onCancelledTap(e, b, it));
+    b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") onCancelledTap(e, b, it); });
+  } else wirePop(b, entry, state, ctx, rowKey);   // (v4.9.6) 팝업 연결은 이 블록 · 이후 예고 점이 함께 쓴다
   markCopy(b, it, (ctx.channels[it.channel_key] || {}).channel_url, state, entry.start);
-  if (rowKey === KING_KEY) decorateBlock(b, entry, state);   // (v4.3.1) 노노카 본인 행의 블록에만
+  if (rowKey === KING_KEY && !cx) decorateBlock(b, entry, state);   // (v4.3.1) 노노카 본인 행의 블록에만
   return b;
 }
 
@@ -913,7 +971,11 @@ function updateLiveRing(card, nowMs) {
 function todayCard(entry, state, ctx, big, laneKey) {
   const it = entry.item;
   const a = el("a", `tcard tcard--${state}` + (big ? " tcard--big" : ""));
-  if (it.is_premiere) a.classList.add("tcard--premiere");
+  const cx = state === "upcoming" && isCancelled(it);
+  if (cx) {   // (v4.11.14) 취소된 예고 — 도넛 회색 원 「취소됨」 · 시각 취소선 · 누르면 취소 글
+    a.classList.add("tcard--cx");
+    if (!SEEN_CX.has(it.id)) { SEEN_CX.add(it.id); a.classList.add("is-cx-in"); }   // 이 화면에서 처음 볼 때만 바뀌는 움직임
+  }
   const url = hasVideo(it) && it.url ? it.url : (ctx.channels[it.channel_key] || {}).channel_url || "#";
   a.href = url; a.target = "_blank"; a.rel = "noopener";
   markCopy(a, it, (ctx.channels[it.channel_key] || {}).channel_url, state, entry.start);
@@ -951,7 +1013,7 @@ function todayCard(entry, state, ctx, big, laneKey) {
     pills.appendChild(lock);
   }
   if (state === "ended") pills.appendChild(el("div", "tcard__pill tcard__pill--end", "종료"));
-  else if (it.is_premiere) pills.appendChild(el("div", "tcard__pill tcard__pill--premiere", "PREMIERE"));
+  else if (it.is_premiere) pills.appendChild(goldTag("tcard__pill tcard__pill--premiere", "PREMIERE", true));   // (v4.11.14) 금색 · 빛줄기
   else if (state === "live") pills.appendChild(el("div", "tcard__pill tcard__pill--live", "LIVE"));
   if (pills.children.length) th.appendChild(pills);
   a.appendChild(th);
@@ -969,13 +1031,20 @@ function todayCard(entry, state, ctx, big, laneKey) {
   }
   // 태그는 합동 · 회원 전용만 (종료 · 예고 태그는 쓰지 않음). 모자라면 다음 줄로 내려간다.
   for (const t of tagsFor(entry, state)) {
-    if (t.classList.contains("tt-tag--collab") || t.classList.contains("tt-tag--mem")) when.appendChild(t);
+    if (t.classList.contains("tt-tag--collab") || t.classList.contains("tt-tag--mem") || t.classList.contains("tt-tag--premiere")) when.appendChild(t);
   }
   const main = el("div", "tcard__main");
   main.appendChild(when);
   main.appendChild(el("div", "tcard__ti", titleText(it, ctx)));
+  if (cx && cxHasTweet(it)) main.appendChild(el("div", "tcard__cxhint", "눌러서 취소 글 보기"));
   body.appendChild(main);
-  if (state === "upcoming") {                 // 남은 시간 링은 이미지가 아니라 제목 영역 오른쪽에
+  if (cx) {                                   // (v4.11.14) 원래 도넛 그대로 — 회색으로 가득 찬 원 + 「취소됨」
+    const ring = el("div", "tcard__ring tcard__ring--up tcard__ring--cx");
+    const t = el("span");
+    t.append(el("b", "", "취소됨"));
+    ring.appendChild(t);
+    body.appendChild(ring);
+  } else if (state === "upcoming") {                 // 남은 시간 링은 이미지가 아니라 제목 영역 오른쪽에
     const ring = el("div", "tcard__ring tcard__ring--up");
     const t = el("span");
     t.append(el("b"), el("small"));
@@ -991,6 +1060,11 @@ function todayCard(entry, state, ctx, big, laneKey) {
     if (state === "ended") paintCycleRing(ring, (entry.end - entry.start) / 60000);
   }
   a.appendChild(body);
+  if (cx) {
+    a.setAttribute("aria-label", `${formatKST(a.dataset.iso)} ${titleText(it, ctx)} · 취소됨` + (cxHasTweet(it) ? " · 누르면 취소 글" : ""));
+    a.addEventListener("click", (e) => onCancelledTap(e, a, it));   // 길게 눌러 복사는 그대로 YouTube 주소(markCopy)
+    return a;
+  }
   if (laneKey === KING_KEY) decorateCard(a, th, main, entry, state);   // (v4.3.1) 노노카 레인의 카드에만
   if (state === "upcoming") updateRing(a, ctx.nowMs);
   else if (state === "live") updateLiveRing(a, ctx.nowMs);
@@ -1200,7 +1274,7 @@ export function buildLaterTables(ctx, plan) {
 export function tickTimetable(boardEl, nowMs) {
   const grid = boardEl.querySelector(".tt__grid");
   if (grid) positionNow(grid, nowMs);
-  for (const card of boardEl.querySelectorAll(".tcard--upcoming")) updateRing(card, nowMs);
+  for (const card of boardEl.querySelectorAll(".tcard--upcoming:not(.tcard--cx)")) updateRing(card, nowMs);
   for (const card of boardEl.querySelectorAll(".tcard--live")) updateLiveRing(card, nowMs);
   const de = boardEl.__ttDe;
   const roll = typeof de === "number" && nowMs >= de;

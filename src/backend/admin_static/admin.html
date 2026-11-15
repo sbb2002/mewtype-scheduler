@@ -485,6 +485,13 @@
         .confirm-check { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0.25rem 0 0.75rem; }
         .confirm-check input { margin-top: 0.2rem; }
         .confirm-check small { display: block; color: var(--color-text-muted); }
+        /* (v4.11.14) 예고 내리기 팝업 — 내리는 방식 두 칸 · 취소 글 주소 입력 / 내용 감지 취소 방식 */
+        .drop-form { display: grid; gap: 0.75rem; margin-bottom: 0.25rem; }
+        .drop-form .seg { grid-template-columns: repeat(2, 1fr); }
+        .drop-url { flex-direction: column; margin: 0; }
+        .drop-url input { width: 100%; padding: 0.5rem 0.65rem; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text); }
+        .chg-mode { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-top: 0.5rem; font-size: 0.85rem; }
+        .chg-mode label { display: flex; align-items: center; gap: 0.35rem; }
         .bn-panel { border: 1px solid var(--color-border); border-left: 4px solid var(--bn-acc, var(--color-border)); border-radius: 8px; padding: 0.75rem 0.9rem 0.25rem; margin-bottom: 1rem; background: rgba(255, 255, 255, 0.02); }
         .bn-panel--event { --bn-acc: #5fb7c9; }
         .bn-panel--gacha { --bn-acc: #b48cff; }
@@ -3306,6 +3313,77 @@
                 }
             },
 
+            // (v4.11.14) 예고 내리기 팝업 양식 — 내리는 방식(조용히 내리기 · 취소됨 표시하기) · 취소 글 주소 · 재등록 차단
+            buildDropForm(body, item) {
+                const wrap = document.createElement("div");
+                wrap.className = "drop-form";
+                const seg = document.createElement("div");
+                seg.className = "seg";
+                seg.setAttribute("role", "radiogroup");
+                seg.setAttribute("aria-label", "내리는 방식");
+                const modes = [
+                    ["quiet", "조용히 내리기", "지금처럼 팬 화면에서 바로 사라집니다"],
+                    ["cancel", "취소됨 표시하기", "카드를 그날 끝(KST 04:00)까지 남기고 「취소됨」으로 보여 줍니다"],
+                ];
+                let mode = "quiet";
+                const btns = modes.map(([k, b, sm]) => {
+                    const x = document.createElement("button");
+                    x.type = "button";
+                    x.className = "seg-btn";
+                    x.setAttribute("role", "radio");
+                    const bb = document.createElement("b");
+                    bb.textContent = b;
+                    const ss = document.createElement("small");
+                    ss.textContent = sm;
+                    x.append(bb, ss);
+                    x.addEventListener("click", () => { mode = k; sync(); });
+                    seg.appendChild(x);
+                    return [k, x];
+                });
+                const urlLab = document.createElement("label");
+                urlLab.className = "confirm-check drop-url";
+                const urlTx = document.createElement("span");
+                urlTx.textContent = "취소를 알린 글 주소 (선택)";
+                const urlHelp = document.createElement("small");
+                urlHelp.textContent = "x.com/…/status/… — 넣으면 팬이 카드를 눌렀을 때 그 글을 트윗 시트에서 엽니다. 비우면 카드는 눌러도 열리지 않습니다.";
+                urlTx.appendChild(urlHelp);
+                const urlIn = document.createElement("input");
+                urlIn.type = "url";
+                urlIn.id = "drop-tweet-url";
+                urlIn.placeholder = "https://x.com/…/status/…";
+                urlLab.append(urlTx, urlIn);
+                const supLab = document.createElement("label");
+                supLab.className = "confirm-check";
+                const supCb = document.createElement("input");
+                supCb.type = "checkbox";
+                supCb.id = "drop-suppress";
+                const supTx = document.createElement("span");
+                supTx.textContent = "12시간 동안 같은 URL 재등록 차단";
+                const supHelp = document.createElement("small");
+                supHelp.textContent = "체크하면 같은 URL 이 12시간 동안 다시 등록되지 않습니다. 체크하지 않으면 다음 수집에서 다시 올라올 수 있습니다.";
+                supTx.appendChild(supHelp);
+                supLab.append(supCb, supTx);
+                const cxNote = document.createElement("p");
+                cxNote.className = "confirm-msg";
+                cxNote.textContent = item && item.url
+                    ? "취소됨 표시는 같은 영상이 다시 올라오지 않게 그날 끝 + 12시간 동안 재등록을 자동으로 막습니다."
+                    : "";
+                const sync = () => {
+                    for (const [k, x] of btns) x.setAttribute("aria-checked", String(k === mode));
+                    urlLab.hidden = mode !== "cancel";
+                    cxNote.hidden = mode !== "cancel" || !cxNote.textContent;
+                    supLab.hidden = mode === "cancel";
+                };
+                wrap.append(seg, urlLab, cxNote, supLab);
+                body.appendChild(wrap);
+                sync();
+                return {
+                    get: () => ({ mode, tweetUrl: urlIn.value.trim(), suppress: supCb.checked }),
+                    validate: () => (mode === "cancel" && urlIn.value.trim() && !/\/status\/\d+/.test(urlIn.value)
+                        ? "글 주소는 x.com/…/status/숫자 형태여야 합니다" : ""),
+                };
+            },
+
             async deletePreview(item) {
                 // (v4a) 3단 확인 — ① 대상 확인 ② 재등록 차단 여부 ③ 최종 확인. 어느 단계든 취소하면
                 // 아무것도 지우지 않는다. (구: 2번째 창의 취소가 "차단 안 함 + 삭제 진행"이라 헷갈렸음)
@@ -3317,28 +3395,31 @@
                     `${this.formatTime(item.scheduled_start || item.live_start)}` +
                     (item.video_id ? ` · ${item.video_id}` : "");
                 // 예전엔 confirm 3번(삭제? → 재등록 차단? → 최종 확인)이었다 — 한 팝업에서 차단 여부를 체크박스로 고르고 삭제로 확정한다
+                // (v4.11.14) 내리는 방식을 고른다 — 「조용히 내리기」(지금까지의 삭제) · 「취소됨 표시하기」(팬 화면에 그날 끝까지 취소됨으로 남김)
                 const dlg = await this.confirmModal({
-                    title: "예고 삭제",
+                    title: "예고 내리기",
                     message: `${desc}\n\n관리 페이지에는 되돌리기가 없습니다.`,
-                    okText: "삭제",
+                    okText: "내리기",
                     danger: true,
-                    checkbox: { label: "12시간 동안 같은 URL 재등록 차단", checked: false,
-                        help: "체크하면 같은 URL 이 12시간 동안 다시 등록되지 않습니다. 체크하지 않으면 다음 수집에서 다시 올라올 수 있습니다." },
+                    build: (body) => this.buildDropForm(body, item),
                 });
                 if (!dlg) {
-                    this.showToast("삭제를 취소했습니다");
+                    this.showToast("내리기를 취소했습니다");
                     return;
                 }
-                const suppress = dlg.checked;
+                const form = dlg.data || {};
+                const mark = form.mode === "cancel";
 
                 try {
                     const result = await this.apiCall("POST", "/delete_preview", {
                         item_id: item.id,
-                        suppress,
+                        suppress: !mark && !!form.suppress,
+                        mark_cancelled: mark,
+                        tweet_url: mark ? (form.tweetUrl || null) : null,
                     });
 
                     if (result.ok) {
-                        this.showToast("예고가 삭제되었습니다");
+                        this.showToast(mark ? "「취소됨」으로 표시했습니다 — 그날 끝(04:00)까지 남습니다" : "예고가 삭제되었습니다");
                         this.loadPreview();
                     } else {
                         this.showToast(result.error || "삭제 실패", "error");
@@ -3898,8 +3979,25 @@
                 } else {
                     if (ch.reason) info("판정 근거: " + ch.reason);
                     info(ch.action === "del"
-                        ? "방송 취소로 감지했습니다. 체크한 예고를 내립니다 (/del terminate 와 같음: 삭제 + 영상 URL 12시간 재등록 차단)."
+                        ? "방송 취소로 감지했습니다. 체크한 예고를 아래에서 고른 방식으로 내립니다 (조용히 내리기 = /del terminate 와 같음: 삭제 + 영상 URL 12시간 재등록 차단)."
                         : `일정 변경으로 감지했습니다. 체크한 예고를 ${this.formatTime(ch.when_iso)} 로 옮깁니다.`);
+                    if (ch.action === "del") {          // (v4.11.14) 내리는 방식 — 기본은 지금처럼 조용히 내리기
+                        const mw = document.createElement("div");
+                        mw.className = "chg-mode";
+                        for (const [v, t] of [["quiet", "조용히 내리기"], ["cancel", "취소됨 표시하기 (그날 끝까지 남김 · 누르면 이 글)"]]) {
+                            const l = document.createElement("label");
+                            const r = document.createElement("input");
+                            r.type = "radio";
+                            r.name = "chg-mode";
+                            r.value = v;
+                            r.checked = v === "quiet";
+                            const sp = document.createElement("span");
+                            sp.textContent = t;
+                            l.append(r, sp);
+                            mw.appendChild(l);
+                        }
+                        wrap.appendChild(mw);
+                    }
                     for (const c of ch.candidates) {
                         const lab = document.createElement("label");
                         lab.className = "chg-row";
@@ -3946,6 +4044,8 @@
                             .map((c) => c.dataset.id);
                         send.change_action = chg.action;
                         send.change_when = chg.when_iso;
+                        const md = document.querySelector('#ingest-preview-content input[name="chg-mode"]:checked');
+                        send.change_mark = chg.action === "del" && !!md && md.value === "cancel";   // (v4.11.14)
                     }
                     const result = await this.apiCall("POST", endpoint, send);
 
@@ -3954,7 +4054,7 @@
                         const ap = (result.change && result.change.applied) || [];
                         const er = (result.change && result.change.errors) || [];
                         this.showToast(ap.length
-                            ? `반영했습니다 — 예고 ${ap.length}건 ${result.change.action === "del" ? "삭제" : "변경"} · ${where} 탭에서 확인하세요`
+                            ? `반영했습니다 — 예고 ${ap.length}건 ${result.change.action === "del" ? (send.change_mark ? "취소됨 표시" : "삭제") : "변경"} · ${where} 탭에서 확인하세요`
                             : `반영했습니다 — ${where} 탭에서 확인하세요`);
                         if (er.length) this.showToast(`일부 실패: ${er.join(" / ")}`, "error");
                         if (result.schedule) {

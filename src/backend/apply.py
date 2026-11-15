@@ -289,7 +289,7 @@ class LocalTaskShim:
 _KIND_LABEL = {
     "merge_rows": "예고 반영", "personal_tweet": "개인 트윗 반영", "apply_notice": "소식 반영",
     "url_confirmed_commit": "URL 확정 예고 반영", "yt_member_live_commit": "회원 전용 라이브 반영",
-    "yt_notif": "YouTube 알림 반영", "apply_preview_edit": "예고 수정 반영", "remove_broadcast": "예고 삭제",
+    "yt_notif": "YouTube 알림 반영", "apply_preview_edit": "예고 수정 반영", "remove_broadcast": "예고 삭제", "cancel_broadcast": "예고 취소 표시",
     "notice_edit_commit": "소식 수정 반영", "notice_del_commit": "소식 삭제", "tweet_del_commit": "트윗 삭제",
     "apply_translation": "번역 반영", "notice_sweep": "지난 소식 정리", "apply_banner": "행사 배너 반영", "banner_sweep": "지난 행사 정리",
     "banner_edit_commit": "행사 수정", "banner_del_commit": "행사 삭제", "snapshot": "일일 스냅샷",

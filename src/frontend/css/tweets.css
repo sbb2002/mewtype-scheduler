@@ -484,6 +484,9 @@ button.tws-md__cell:active .tws-md__play { transform: scale(0.94); }
 .tws-tw.is-arriving { animation: tws-rise 560ms cubic-bezier(0.2, 1.15, 0.3, 1) both; }
 @keyframes tws-rise { from { opacity: 0; transform: translateY(36px) scale(0.98); } 55% { opacity: 1; } to { opacity: 1; transform: none; } }
 .tws-tw.is-fresh { animation: tws-fresh 1400ms ease-out; border-radius: 14px; }
+/* (v4.11.14) 취소된 예고에서 열었을 때 — 취소 글이 한 번 빛나고, 글 아래에 어떤 예고가 취소됐는지 한 줄 */
+.tws-tw.is-cxhit { animation: tws-fresh 1600ms ease-out; border-radius: 14px; }
+.tws-cxnote { margin-top: 4px; padding-top: 6px; border-top: 1px dashed color-mix(in srgb, var(--mi) 35%, transparent); font-size: 0.72rem; opacity: 0.85; }
 @keyframes tws-fresh {
   0% { box-shadow: 0 0 0 0 transparent; }
   18% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--mi) 70%, transparent); }
@@ -643,7 +646,7 @@ button.tws-md__cell:active .tws-md__play { transform: scale(0.94); }
   .tws__newchip { transition: opacity var(--t-fast) !important; transform: none !important; }
   .tws-tw.is-arriving { animation: tws-fade 200ms ease both; }   /* (v4.9.1) 떠오르기 · 흔들기 · 빛내기 대신 투명도만 */
   @keyframes tws-fade { from { opacity: 0; } to { opacity: 1; } }
-  .tws-tw.is-fresh { animation: none; }
+  .tws-tw.is-fresh, .tws-tw.is-cxhit { animation: none; }
   .tws__fab, .tws__fab.is-on { transform: none; transition: opacity var(--t-fast); }
   .tws__fab.is-on .tws__fab-in, .tws__fab.is-on .tws__fab-in::before, .tws__fab.is-on .tws__fab-in svg { animation: none; }
   .tws__rz::after, .tws-xcover::after { transition: opacity var(--t-fast); }

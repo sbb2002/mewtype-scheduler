@@ -378,6 +378,37 @@ def allows_api_time(item: dict) -> bool:
     return auto_edit_level(item) in ("yt", "x_yt")
 
 
+# ── (v4.11.14) 취소된 예고 ─────────────────────────────────────────────────
+# 방송 취소를 감지하면 예고를 바로 내리지 않고 `cancelled` 를 붙여 그날 끝(KST 04:00)까지 남긴다.
+# cancelled = {"at": 취소 처리 시각 UTC ISO, "by": "tweet"|"admin", "tweet_id": str|None, "tweet_url": str|None}
+# 붙은 항목은 수집(API · FSM · 재등록 차단)이 상태를 바꾸지 않고, cancel_until 이 지나면 아카이브로 옮긴다.
+
+_KST = timezone(timedelta(hours=9))
+DAY_EDGE_HOUR_KST = 4   # 프론트 「오늘」 구간 경계(timetable.js 와 같은 04:00)
+
+
+def cancel_until(item: dict) -> str | None:
+    """취소된 예고를 남겨 둘 마지막 시각(UTC ISO) — 예정 시각(없으면 취소 시각)이 속한 「하루」(KST 04:00 ~ 다음 04:00)의 끝."""
+    base = item.get("scheduled_start") or ((item.get("cancelled") or {}).get("at"))
+    if not base:
+        return None
+    try:
+        dt = datetime.fromisoformat(base.replace("Z", "+00:00")).astimezone(_KST)
+    except (ValueError, AttributeError):
+        return None
+    day = (dt - timedelta(hours=DAY_EDGE_HOUR_KST)).date()
+    end = datetime(day.year, day.month, day.day, DAY_EDGE_HOUR_KST, tzinfo=_KST) + timedelta(days=1)
+    return end.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def cancel_expired(item: dict, now_iso: str) -> bool:
+    """취소된 예고가 남겨 둘 시간을 넘겼나. 시각을 모르면 True(남겨 둘 근거가 없다)."""
+    until = cancel_until(item)
+    if not until:
+        return True
+    return now_iso >= until
+
+
 def to_archive_record(item: dict, now_iso: str) -> dict:
     """
     Convert an item to an archive record.
@@ -406,6 +437,18 @@ if __name__ == "__main__":
     assert id1 == id2, "new_id 재현성 실패"
     assert id1.startswith("pv_") and len(id1) == 11, "new_id 형식 실패"
     print(f"✓ new_id 안정성: {id1}")
+
+    # Test (v4.11.14): 취소된 예고 보존 기한 = 예정 시각이 속한 하루(KST 04:00 경계)의 끝
+    _c = {"scheduled_start": "2026-11-15T13:00:00Z", "cancelled": {"at": "2026-11-15T09:22:06Z"}}  # 11/15 22:00 KST
+    assert cancel_until(_c) == "2026-11-15T19:00:00Z", cancel_until(_c)                          # → 11/16 04:00 KST
+    _c2 = {"scheduled_start": "2026-11-15T17:30:00Z"}                                             # 11/16 02:30 KST = 11/15 의 하루
+    assert cancel_until(_c2) == "2026-11-15T19:00:00Z", cancel_until(_c2)
+    _c3 = {"scheduled_start": "2026-11-15T19:30:00Z"}                                             # 11/16 04:30 KST = 11/16 의 하루
+    assert cancel_until(_c3) == "2026-11-16T19:00:00Z", cancel_until(_c3)
+    assert cancel_until({"cancelled": {"at": "2026-11-15T09:22:06Z"}}) == "2026-11-15T19:00:00Z"   # 시각 없으면 취소 시각 기준
+    assert not cancel_expired(_c, "2026-11-15T18:59:59Z") and cancel_expired(_c, "2026-11-15T19:00:00Z")
+    assert cancel_expired({}, now)
+    print("✓ (v4.11.14) cancel_until · cancel_expired")
 
     # Test 1b: (v4a) 같은 tick·같은 채널 두 영상 → id 다름 / ensure_unique_ids
     a = make_item(channel_key="arale", state="upcoming", source="api", now_iso=now, video_id="V1")

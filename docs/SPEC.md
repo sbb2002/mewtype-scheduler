@@ -149,7 +149,15 @@ config/channels.json   # 채널 단일 소스 — channel_order(5인) · channel
       "collab_with": null,                  // 합동이면 참여 channel_key 배열(주 레인 제외). 렌더가 union 레인 팬아웃
       "host": null,                         // "group" = 5인 전원 합동(出演情報 텍스트 또는 그룹 채널 API 감지) → supersede 면제
       "kind": null,                         // "collab" | 카테고리(game/song/talk/…) | null
-      "is_premiere": false,                // Premiere: yellow card/timetable border and PREMIERE thumbnail badge; missing = false
+      "is_premiere": false,                 // 프리미어. (v4.11.14) 판정은 방송 전(upcoming)에서만 — 일반 라이브 종료 순간 오판 방지.
+                                             //   한 번 붙으면 방송 중 · 종료 뒤에도 유지. 표시 = 테두리 없이 금색 태그(썸네일 「PREMIERE」 + 날짜 옆 「프리미어」).
+                                             //   테두리는 시간 상태(빨강 방송 중 · 호박색 1시간 이내 · 회색 종료)만 나타낸다. 없으면 false
+      "cancelled": null,                    // (v4.11.14) 취소된 예고 — {"at", "by": "tweet"|"admin", "tweet_id", "tweet_url"}. 없으면 필드 없음.
+                                             //   트윗 감지 취소(기본) · 관리 페이지 「취소됨 표시하기」 때 붙는다. 붙은 항목은 수집(API · FSM · 재등록 차단 ·
+                                             //   자리표시 TTL · 시각 override)이 바꾸지 않고, 예정 시각이 속한 하루(KST 04:00 ~ 다음 04:00)의 끝에
+                                             //   아카이브로 옮긴다(`preview.cancel_until`). 영상 URL 차단은 그날 끝 + 12h. 반려(LLM 판단 되돌리기) = 필드 제거.
+                                             //   프론트: 도넛 = 회색으로 가득 찬 원 + 「취소됨」, 시각 취소선, PC 블록 = 점선 테두리 + 「✕ 취소됨」,
+                                             //   누르면 YouTube 대신 트윗 시트에서 그 글(없으면 tweet_url 새 탭). 길게 눌러 복사는 YouTube 주소 그대로
       "membership": false,                  // true = 회원전용. watching 스킵, 시작 신호→live 직행, API 확인 안 함
 
       "title": "【チラズアート】…",           // JP 원문. announced 단계엔 null 가능

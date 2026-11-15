@@ -343,8 +343,11 @@
   }
 }
 
-/* Premiere edges take priority over broadcast state. */
-.card.card--premiere { border: 2px solid #facc15; }
-.card.card--premiere:hover { box-shadow: 0 4px 12px rgba(250, 204, 21, 0.25); }
+/* (v4.11.14) 프리미어 = 테두리 없이 금색 배지(.gold — timetable.css) */
+.card__badge.card__badge--premiere { box-shadow: inset 0 0 0 1px rgba(255, 244, 200, 0.75), inset 0 -1px 0 rgba(120, 80, 10, 0.35); }
 
-.card__badge.card__badge--premiere { background: #facc15; color: #1a1a1a; box-shadow: none; }
+/* (v4.11.14) 취소된 예고(이후 예고 카드) — 회색 「취소됨」 배지 · 시각 취소선 · 흐린 썸네일 */
+.card.card--cx .card__thumb-wrap { filter: grayscale(0.85) brightness(0.7); }
+.card.card--cx .card__time { text-decoration: line-through; color: var(--color-ended); }
+.card.card--cx .card__title, .card.card--cx .card__rel { color: var(--color-ended); }
+.card__badge.card__badge--cx { background: var(--color-ended); color: var(--color-bg); box-shadow: none; }

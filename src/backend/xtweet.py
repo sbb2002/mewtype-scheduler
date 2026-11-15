@@ -944,6 +944,8 @@ def apply_overrides(new_items: list[dict], prev_items: list[dict], now_iso: str)
     new = [dict(b) for b in (new_items or [])]
 
     for b in new:
+        if b.get("cancelled"):   # (v4.11.14) 취소 표시로 남긴 예고는 시각을 건드리지 않는다
+            continue
         # 규칙 1: 이전 아이템에서 같은 방송 찾기
         pb = preview.match_item(prev, b)
         if pb is None:

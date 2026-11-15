@@ -199,13 +199,35 @@ def edit_preview(item_id: str, patch: dict, seen: dict) -> dict:
     return _record("edit_preview", item_id, f"{cur.get('channel_key')} {cur.get('title') or ''} ← {patch}", res)
 
 
-def delete_preview(item_id: str, suppress: bool) -> dict:
-    """예고 항목 삭제(아카이브). suppress=True 면 그 URL 을 12시간 재등록 차단(ops admin_state)."""
+def delete_preview(item_id: str, suppress: bool, mark_cancelled: bool = False, tweet_url: str | None = None) -> dict:
+    """예고 항목 삭제(아카이브). suppress=True 면 그 URL 을 12시간 재등록 차단(ops admin_state).
+    (v4.11.14) mark_cancelled=True 면 내리지 않고 「취소됨」 표시(그날 끝 KST 04:00 까지 남김) — 차단은 그날 끝 + 12h.
+    tweet_url(선택) = 취소를 알린 글 주소 — 팬 화면에서 카드를 누르면 그 글을 연다."""
     pv = list_preview()
     cur = next((it for it in pv.get("items", []) if it.get("id") == item_id), None)
     if cur is None:
         return _err("항목이 없습니다 (이미 사라짐)")
     now = _now_iso()
+    if mark_cancelled:
+        t = _t()
+        tu = (tweet_url or "").strip() or None
+        m = t._STATUS_ID_RE.search(tu or "")
+        cx = t._cancel_info("admin", now, tweet_id=m.group(1) if m else None, tweet_url=tu)
+        res = _submit("cancel_broadcast", {"snapshot": cur, "now_iso": now, "cancel": cx,
+                                           "action": f"admin 취소 표시 {cur.get('channel_key')} {item_id}"})
+        if res["ok"] and not (res.get("result") or {}).get("cancelled"):
+            return _err("취소 표시 안 됨 — 그 사이 항목이 바뀌었거나 사라졌습니다")
+        if res["ok"] and cur.get("url") and t.xtweet.YT_VIDEO_RE.search(cur["url"]):
+            from . import admin
+            try:
+                gh = _store()
+                st, sha = gh.read_json("admin_state.json")
+                gh.write_json("admin_state.json", admin.add_suppress(st or admin.default_admin_state(), url=cur["url"],
+                                                                     now_iso=now, ttl_sec=t._cancel_suppress_ttl(cur, now)),
+                              prev_sha=sha, message=f"ops: suppress += {cur['url']} {now}")
+            except Exception as e:  # noqa: BLE001
+                res["result"] = dict(res.get("result") or {}, suppress_error=str(e)[:100])
+        return _record("delete_preview", item_id, f"{cur.get('channel_key')} {cur.get('title') or ''} (취소됨 표시)", res)
     res = _submit("remove_broadcast", {"snapshot": cur, "now_iso": now,
                                        "action": f"admin 삭제 {cur.get('channel_key')} {item_id}"})
     if res["ok"] and not (res.get("result") or {}).get("removed"):
@@ -279,7 +301,8 @@ def _change_plan(t, raw: str, host: str, now: str) -> dict:
 
 
 def _apply_change(host: str, action: str | None, ids: list | None, when_iso: str | None,
-                  raw: str | None = None, tag: str | None = None) -> dict:
+                  raw: str | None = None, tag: str | None = None, mark_cancelled: bool = False,
+                  tweet_url: str | None = None) -> dict:
     """(v4a) 미리보기에서 관리자가 확인한 예고에만 취소·변경 적용. 취소 = `/del` terminate 와 동일
     (삭제 + 영상 URL 12h 재등록 차단 — 안 하면 다음 수집이 되살린다). 채널 자리표시 URL 은 차단하지 않는다.
     raw: 취소·변경을 일으킨 글 — 하나라도 적용되면 원문 보존(`broadcast_change`, 2026-10-01 운영자 결정)."""
@@ -296,7 +319,11 @@ def _apply_change(host: str, action: str | None, ids: list | None, when_iso: str
             continue
         label = f"{t._kst_label(it.get('scheduled_start'))} {it.get('title_ko') or it.get('title') or ''}".strip()
         if action == "del":
-            r = delete_preview(iid, bool(it.get("url") and t.xtweet.YT_VIDEO_RE.search(it["url"])))
+            _tu = tweet_url
+            if mark_cancelled and not _tu and tag:   # (v4.11.14) 원문 태그에 트윗 id 가 있으면 그 글을 취소 글로
+                _tu = t._cancel_info("admin", "", tag=tag).get("tweet_url")
+            r = delete_preview(iid, bool(it.get("url") and t.xtweet.YT_VIDEO_RE.search(it["url"])),
+                               mark_cancelled=mark_cancelled, tweet_url=_tu)
         elif when_iso:
             r = edit_preview(iid, {"scheduled_start": when_iso}, {})
         else:
@@ -311,7 +338,8 @@ def _apply_change(host: str, action: str | None, ids: list | None, when_iso: str
 def ingest_preview_raw(raw: str, *, confirm: bool, channel_key: str | None = None, detect_change: bool = False,
                        change_ids: list | None = None, change_action: str | None = None,
                        change_when: str | None = None, tag: str | None = None, quote: str | None = None,
-                       members: list | None = None, media: list | None = None) -> dict:
+                       members: list | None = None, media: list | None = None,
+                       change_mark: bool = False, change_tweet_url: str | None = None) -> dict:
     """예고 원문 투입 + (v4a) 「내용 감지를 통한 예고 수정」. detect_change 는 호스트(channel_key)가 있을 때만.
     감지만 되고 예고로는 인식되지 않는 글(예: 휴방 안내)도 미리보기 · 확정이 된다(change_only)."""
     if not (detect_change and channel_key):
@@ -333,7 +361,8 @@ def ingest_preview_raw(raw: str, *, confirm: bool, channel_key: str | None = Non
                                    members=members, media=media)
     recog_fail = (not res.get("ok")) and "인식되지 않았습니다" in (res.get("error") or "")
     if res.get("ok") or (recog_fail and change_ids):
-        ch = _apply_change(channel_key, change_action, change_ids, change_when, raw=raw, tag=tag)
+        ch = _apply_change(channel_key, change_action, change_ids, change_when, raw=raw, tag=tag,
+                           mark_cancelled=bool(change_mark), tweet_url=change_tweet_url)
         if recog_fail:
             res = _ok({"change_only": True})
         res["change"] = ch
@@ -1716,7 +1745,7 @@ _AUTO_LABEL = {
     "yt_notif": "YouTube 알림 반영", "merge_rows": "예고 반영", "personal_tweet": "개인 트윗 반영",
     "apply_notice": "소식 반영", "url_confirmed_commit": "URL 확정 예고 반영",
     "yt_member_live_commit": "회원 전용 라이브 반영", "apply_preview_edit": "예고 수정 반영",
-    "remove_broadcast": "예고 삭제", "notice_edit_commit": "소식 수정 반영", "notice_del_commit": "소식 삭제",
+    "remove_broadcast": "예고 삭제", "cancel_broadcast": "예고 취소 표시", "notice_edit_commit": "소식 수정 반영", "notice_del_commit": "소식 삭제",
     "tweet_del_commit": "트윗 삭제",
     # (2026-10-01) 내부 이름(llm_action 등)이 그대로 보이던 작업들
     "manual_preview": "수동 예고 반영", "tweet_edit_commit": "트윗 수정 반영", "video_release": "프리미어 기록",
@@ -2042,12 +2071,19 @@ if __name__ == "__main__":
         assert set_log_level("detail")["ok"] and get_control()["log_level"] == "detail"
         assert os.path.exists(os.path.join(d, "ops", "control.json"))
         assert set_paused(True)["ok"] and get_control()["paused"] is True
+        # (v4.11.14) 「취소됨 표시하기」 — 내리지 않고 cancelled 를 붙인다(취소 글 주소에서 트윗 id)
+        r = delete_preview("pv_a", False, mark_cancelled=True,
+                           tweet_url="https://x.com/arale_yumemita/status/2121894709891408012")
+        assert r["ok"], r
+        _cx = list_preview()["items"][0].get("cancelled") or {}
+        assert _cx.get("by") == "admin" and _cx.get("tweet_id") == "2121894709891408012" \
+            and _cx.get("tweet_url") == "https://x.com/arale_yumemita/status/2121894709891408012", _cx
         # 삭제 + 재등록 차단 (url 없으면 차단 생략)
         r = delete_preview("pv_a", True)
         assert r["ok"] and list_preview()["items"] == [], r
         # 이력
         h = list_history()
-        assert [x["action"] for x in h][:3] == ["delete_preview", "set_paused", "set_log_level"], h
+        assert [x["action"] for x in h][:4] == ["delete_preview", "delete_preview", "set_paused", "set_log_level"], h
         assert os.path.exists(os.path.join(d, "ops", "history.json"))
         # 원문 투입 미리보기 — 개인 예고 유닛 미지정
         assert ingest_preview_raw("こんにちは", confirm=False)["ok"] is False
