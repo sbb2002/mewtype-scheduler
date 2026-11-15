@@ -44,6 +44,10 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
         "remove_broadcast": lambda gh, a: {
             "removed": t._remove_broadcast(gh, a["snapshot"], a["now_iso"], a["action"])
         },
+        # (v4.11.14) 방송 취소 — 내리지 않고 「취소됨」 표시
+        "cancel_broadcast": lambda gh, a: {
+            "cancelled": t._mark_broadcast_cancelled(gh, a["snapshot"], a["now_iso"], a["action"], a["cancel"])
+        },
         "apply_notice": lambda gh, a: dict(zip(
             ("mode", "parsed"),
             t._commit_notice(gh, a.get("prepared"), a["now_iso"]),
@@ -132,7 +136,7 @@ if __name__ == "__main__":
         "tweet_del_commit", "tweet_edit_commit", "url_confirmed_commit", "yt_member_live_commit", "undo_restore",
         "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain", "group_pending", "video_release", "llm_action",
         "apply_banner", "banner_sweep", "banner_edit_commit", "banner_del_commit", "song_edit", "song_push",
-        "ocr_pending",
+        "ocr_pending", "cancel_broadcast",
     }
     missing = expected - set(reg)
     assert not missing, f"registry missing kinds: {missing}"

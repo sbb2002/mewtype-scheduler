@@ -77,7 +77,10 @@ def _video_from_item(item: dict) -> VideoInfo:
     # 예정 생방송 5건 = uploaded · P0D. 歌枠 같은 노래 "생방송"은 해당 없음 — 녹화된 노래 · 뮤비 공개만 걸러 낸다.
     upload_status = (item.get('status') or {}).get('uploadStatus')
     duration = (item.get('contentDetails') or {}).get('duration')
-    is_premiere = live_state in ('upcoming', 'live') and (
+    # (v4.11.14) 판정은 방송 전(upcoming)에서만 — 일반 라이브가 끝나는 순간 API 가 아직 live 인데 녹화본은 이미 processed 라
+    # 프리미어로 잘못 잡혔다(11/14 리츠 · 미야코 · 아라레 종료 카드 노란 테두리). 진짜 프리미어는 시작 전부터 processed 다.
+    # 한 번 붙은 표시는 preview_build 가 이어 붙인다(방송 중 · 종료 뒤에도 유지).
+    is_premiere = live_state == 'upcoming' and (
         upload_status == 'processed' or duration not in (None, 'P0D'))
 
     return VideoInfo(
@@ -483,7 +486,12 @@ if __name__ == "__main__":
         done = _video_from_item({"id": "zVdR0urFjnc", "snippet": {"liveBroadcastContent": "none", "title": "cover"},
                                  "contentDetails": {"duration": "PT3M15S"}, "status": {"uploadStatus": "processed"}})
         old = _video_from_item({"id": "x", "snippet": {"liveBroadcastContent": "upcoming"}})  # part 없는 옛 응답
+        # (v4.11.14) 일반 라이브 종료 직전 — API 는 아직 live 인데 녹화본이 processed · 길이 있음 → 프리미어 아님
+        ending = _video_from_item({"id": "S6goI8Oatd8", "snippet": {"liveBroadcastContent": "live", "title": "WS開封"},
+                                   "liveStreamingDetails": {"actualStartTime": "2026-11-14T12:03:15Z"},
+                                   "contentDetails": {"duration": "PT1H4M"}, "status": {"uploadStatus": "processed"}})
         assert prem.is_premiere and not live.is_premiere and not done.is_premiere and not old.is_premiere
+        assert not ending.is_premiere, "라이브 종료 직전 processed 를 프리미어로 잡으면 안 됨"
         print("  ✓ 프리미어 판정 (processed/duration 있음 = 프리미어, uploaded/P0D = 생방송, 지난 영상 · 옛 응답 = 아님)")
 
         print("\nSUCCESS: YouTube client test passed")

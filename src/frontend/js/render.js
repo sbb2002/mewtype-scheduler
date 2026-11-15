@@ -8,6 +8,7 @@ import {
   avatarSized, classify, itemKeys, buildTimetable, buildBoardHead, buildTodayCards, buildFoldButton,
   tickTimetable, applyTimetableMarquees, closeCardPop,
   planLater, laterCounts, buildLaterTables,   // (v4.9.6) PC 표 보기의 이후 예고 = 이번주 표 + 먼 미래 표
+  openCancelTweet,   // (v4.11.14) 취소된 예고 → 취소 글(트윗 시트)
 } from "./timetable.js";
 
 /* ── 보기 방식 (v4.4.0, PC 전용) — "table"(오늘 타임테이블) | "cards"(5인 카드 열) ──────────────
@@ -101,6 +102,31 @@ function sampleLaneColor(url, laneEl) {
  * @returns {HTMLAnchorElement}
  */
 function createCard(item, nowMs, channelData, laneKey) {
+  const a = createCardBase(item, nowMs, channelData, laneKey);
+  if (!item.cancelled || item.state === "live" || item.state === "end") return a;
+  // (v4.11.14) 취소된 예고 — 상태 배지를 「취소됨」으로, 시각 취소선, 누르면 취소 글(트윗 시트 · 없으면 X 주소)
+  a.classList.add("card--cx");
+  a.classList.remove("card--premiere");
+  for (const b of a.querySelectorAll(".card__badge:not(.card__badge--corner-left)")) b.remove();
+  const tw = a.querySelector(".card__thumb-wrap");
+  if (tw) {
+    const badge = document.createElement("span");
+    badge.className = "card__badge card__badge--cx";
+    badge.textContent = "취소됨";
+    tw.appendChild(badge);
+  }
+  const rel = a.querySelector(".card__rel");
+  if (rel) { rel.textContent = "취소됨"; rel.classList.remove("card__rel--late"); }
+  const cx = item.cancelled;
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (openCancelTweet(item.channel_key, cx.tweet_id, a, item)) return;
+    if (cx.tweet_url) window.open(cx.tweet_url, "_blank", "noopener");
+  });
+  return a;
+}
+
+function createCardBase(item, nowMs, channelData, laneKey) {
   const a = document.createElement("a");
   a.target = "_blank";
   a.rel = "noopener";
@@ -114,7 +140,6 @@ function createCard(item, nowMs, channelData, laneKey) {
       ? "card card--announced card--sched-live"
       : "card card--announced";
     if (isCollab) a.classList.add("card--collab");
-    if (item.is_premiere) a.classList.add("card--premiere");
     a.href = item.url || (channelData && channelData.channel_url) || "#";
     markCopy(a, item, channelData && channelData.channel_url, "upcoming", Date.parse(item.scheduled_start));
 
@@ -135,7 +160,7 @@ function createCard(item, nowMs, channelData, laneKey) {
     const badge = document.createElement("span");
     badge.className = isCollab ? "card__badge card__badge--collab" : "card__badge card__badge--announced";
     badge.textContent = isCollab ? "합동" : "예고";
-    if (item.is_premiere) { badge.className = "card__badge card__badge--premiere"; badge.textContent = "PREMIERE"; }
+    if (item.is_premiere) { badge.className = "card__badge card__badge--premiere gold"; badge.textContent = "PREMIERE"; }   // (v4.11.14) 금색
     thumbWrap.appendChild(badge);
     a.appendChild(thumbWrap);
 
@@ -216,7 +241,6 @@ function createCard(item, nowMs, channelData, laneKey) {
   const isCollab = item.kind === "collab" || (Array.isArray(item.collab_with) && item.collab_with.length > 0);
 
   a.className = "card";
-  if (item.is_premiere) a.classList.add("card--premiere");
   if (isLive) {
     a.classList.add("card--live");
   } else if (isEnd) {
@@ -263,7 +287,7 @@ function createCard(item, nowMs, channelData, laneKey) {
 
   if (item.is_premiere && !isEnd) {
     const badge = document.createElement("span");
-    badge.className = "card__badge card__badge--premiere";
+    badge.className = "card__badge card__badge--premiere gold";   // (v4.11.14) 테두리 대신 금색 배지
     badge.textContent = "PREMIERE";
     thumbWrap.appendChild(badge);
   } else if (isLive) {
@@ -987,8 +1011,8 @@ export function updateCountdowns(boardEl, nowMs = Date.now()) {
     const timeEl = cardEl.querySelector(".card__time");
     if (!relSpan || !timeEl || !timeEl.dateTime) continue;
 
-    // assumed_live 는 "방송 중 (추정)" 고정
-    if (cardEl.classList.contains("card--sched-live")) continue;
+    // assumed_live 는 "방송 중 (추정)" 고정 · (v4.11.14) 취소된 예고는 「취소됨」 고정
+    if (cardEl.classList.contains("card--sched-live") || cardEl.classList.contains("card--cx")) continue;
 
     // live: elapsedLabel / 나머지: relativeLabel
     if (cardEl.classList.contains("card--live")) {

@@ -1053,7 +1053,47 @@ function _renderFeed(fresh) {
       a._setFace(want, false);
       a._align();
     }
-    if (fresh) {
+    if (fresh && s.focus && s.focus.ck === s.ck) {
+      // (v4.11.14) 취소된 예고에서 열었다 — 취소 글을 가운데로, 시트가 다 올라온 뒤 한 번 더 맞추고 빛낸다
+      const fx = s.focus;
+      s.focus = null;
+      const el = feed.querySelector(`.tws-tw[data-id="${CSS.escape(String(fx.id))}"]`);
+      if (el) {
+        const center = () => el.getBoundingClientRect().top - feed.getBoundingClientRect().top + feed.scrollTop
+          - Math.max(12, (feed.clientHeight - el.offsetHeight) / 2);
+        feed.scrollTop = Math.max(0, center() + 120);   // 살짝 아래에서 시작해 올라오며 자리 잡는다
+        if (fx.note && !el.querySelector(".tws-cxnote")) el.appendChild(_el("div", { cls: "tws-cxnote", text: fx.note }));
+        const live = () => S === s && s.open && el.isConnected;
+        const flash = () => {
+          if (!live()) return;
+          _anim(el, "is-cxhit");   // 한 번 크게 번쩍이고 끝나면 클래스를 떼어 테두리가 원래대로 돌아간다
+          // PC 시트는 X 카드가 불러와지며 몇 초 더 자란다 — 번쩍임이 끝날 때 안내 줄까지 보이게 한 번 더 맞춘다
+          setTimeout(() => {
+            if (!live()) return;
+            const want = Math.max(0, Math.min(center(), feed.scrollHeight - feed.clientHeight));
+            if (Math.abs(feed.scrollTop - want) > 16) feed.scrollTo({ top: want, behavior: _reduce() ? "auto" : "smooth" });
+          }, _reduce() ? 0 : 1550);
+        };
+        setTimeout(() => {
+          if (!live()) return;
+          feed.scrollTo({ top: Math.max(0, center()), behavior: _reduce() ? "auto" : "smooth" });
+          // 내려가는 동안 위쪽 X 카드가 실제 높이로 커지면 자리가 밀린다 — 멈춘 뒤 한 번 더 맞추고(안내 줄까지 보이게) 빛낸다
+          let done = false;
+          const settle = () => {
+            if (done || !live()) return;
+            done = true;
+            feed.removeEventListener("scrollend", settle);
+            const want = Math.max(0, Math.min(center(), feed.scrollHeight - feed.clientHeight));
+            if (Math.abs(feed.scrollTop - want) > 16) {
+              feed.scrollTo({ top: want, behavior: _reduce() ? "auto" : "smooth" });
+              setTimeout(flash, _reduce() ? 0 : 320);
+            } else flash();
+          };
+          feed.addEventListener("scrollend", settle);
+          setTimeout(settle, _reduce() ? 0 : 650);   // scrollend 를 모르는 브라우저 · 움직이지 않은 경우
+        }, _reduce() ? 0 : 420);
+      } else feed.scrollTop = feed.scrollHeight;
+    } else if (fresh) {
       // (v4.9.3) 처음이면 맨 아래 — 「여기부터 새 글」 선은 표시만. 이 멤버를 연 동안 다시 왔으면 기억한 자리
       const tgt = L.restoreTarget(s.pos[s.ck], arts.map((a) => a.dataset.id));
       const el = tgt && feed.querySelector(`.tws-tw[data-id="${CSS.escape(tgt.id)}"]`);
@@ -1582,6 +1622,33 @@ function _wire() {
 }
 
 /* ── public ─────────────────────────────────────────────────────── */
+/** (v4.11.14) 취소된 예고 카드 · 블록에서 — 그 멤버 트윗 시트를 열고 취소 글로 데려가 한 번 빛낸다.
+ *  글이 시트에 없으면(48시간 지나 사라짐 · 아직 안 받음) false — 호출부가 X 주소를 연다. item = 취소된 예고(안내 문구용) */
+export function openCancelTweet(ck, tweetId, from, item) {
+  if (!tweetId || !_st.board) return false;
+  const list = _visible(_st.data)[ck] || [];
+  if (!list.some((m) => String(m.id) === String(tweetId))) return false;
+  const s = _ensureSheet();
+  let note = "이 글로 예고가 취소됐어요";
+  const ss = item && Date.parse(item.scheduled_start);
+  if (ss) {
+    const f = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })
+      .formatToParts(new Date(ss)).reduce((o, p) => ((o[p.type] = p.value), o), {});
+    note = `이 글로 ${f.month}/${f.day} ${f.hour}:${f.minute} 예고가 취소됐어요`;
+  }
+  s.focus = { ck, id: String(tweetId), note };
+  if (s.open) {
+    if (s.ck === ck) { _renderFeed(true); return true; }
+    _close();
+  }
+  _open(ck, from);
+  return true;
+}
+// 취소된 예고 카드 · 블록(timetable.js · render.js)이 보내는 「취소 글 열기」 — 직접 import 대신 문서 이벤트
+document.addEventListener("mew:cancel-tweet", (e) => {
+  const d = e.detail || {};
+  d.handled = openCancelTweet(d.ck, d.id, d.from, d.item);
+});
 export function renderTweets(boardEl, data) {
   _st.board = boardEl;
   if (data !== undefined) _st.data = data;

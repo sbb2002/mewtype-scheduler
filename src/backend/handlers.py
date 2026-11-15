@@ -651,8 +651,8 @@ def _run(mode: str, woken_video_id: str | None, websub: dict | None = None) -> d
                 kept = []
                 for it in new_preview.get("items", []):
                     u = it.get("url")
-                    if u and _admin.suppressed(adm, u, now_iso):
-                        continue  # 재진입 차단 — 이 아이템은 안 싣는다
+                    if u and not it.get("cancelled") and _admin.suppressed(adm, u, now_iso):
+                        continue  # 재진입 차단 — 이 아이템은 안 싣는다. (v4.11.14) 취소 표시로 남긴 예고는 그날 끝까지 싣는다
                     lock = _admin.get_edit_lock(adm)
                     if (lock and lock.get("id") == it.get("id")
                             and _admin.edit_lock_active(adm, it.get("id"), now_iso)):

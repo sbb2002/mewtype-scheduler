@@ -98,6 +98,15 @@ def _carry_collab(broadcast: dict, prev_entry: dict | None) -> None:
     broadcast["kind"] = "collab"
 
 
+def _keep_cancelled(item: dict, items: list, gone_items: list, now_iso: str) -> None:
+    """(v4.11.14) 취소된 예고 — 수집 결과로 상태 · 시각을 바꾸지 않고 그날 끝(KST 04:00)까지 그대로 싣는다.
+    지나면 아카이브로 옮긴다. 확인(wake)은 예약하지 않는다."""
+    if preview.cancel_expired(item, now_iso):
+        gone_items.append(preview.to_archive_record(item, now_iso))
+    else:
+        items.append(dict(item))
+
+
 def build_preview(
     channels_cfg: dict,
     videos: dict[str, "VideoInfo"],
@@ -172,6 +181,10 @@ def build_preview(
 
     # ─ 1. videos.list 결과 처리 (API 확정 영상) ─
     for video_id, video in videos.items():
+        _cx = prev_by_video_id.get(video_id)
+        if _cx and _cx.get("cancelled"):
+            _keep_cancelled(_cx, items, gone_items, now_iso)
+            continue
         if is_group_release(video, channels_cfg):
             # (v4a) 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송이 아니다(2026-09-30 운영자 결정, 10-01 그룹 채널로 한정).
             # 새로 만들지 않고, 트윗 등으로 먼저 올라와 있던 항목도 이번에 뺀다(아카이브 안 함). 호출부가 `skipped` 로 받아 기록해 둔다(추후 플레이어 재료)
@@ -259,7 +272,7 @@ def build_preview(
             else:
                 continue  # live_state="none" 은 처리 안 함 (이미 archive 됨)
 
-        # Keep confirmed premiere metadata after the API reports a completed video.
+        # 프리미어 표시는 방송 전 판정(VideoInfo.is_premiere — upcoming 에서만 참)을 이어 붙여 방송 중 · 종료 뒤에도 유지한다.
         item["is_premiere"] = bool(getattr(video, "is_premiere", False) or item.get("is_premiere", False))
 
         if item["state"] == "announced":
@@ -306,6 +319,11 @@ def build_preview(
 
         item = dict(prev_item)
 
+        # (v4.11.14) 취소된 예고 — 유예 · TTL · 대체 판정 없이 그날 끝까지
+        if item.get("cancelled"):
+            _keep_cancelled(item, items, gone_items, now_iso)
+            continue
+
         # 2-a. video_id 보유 아이템 — 이번 API 응답에서만 빠짐 → removed 유예 + FSM
         if vid:
             last_seen = item.get("last_updated")
@@ -338,6 +356,7 @@ def build_preview(
             _hit = min(
                 (it for it in items
                  if it.get("video_id")
+                 and not it.get("cancelled")
                  and it.get("channel_key") in _chans
                  and it.get("scheduled_start")
                  and abs(_age_sec(it["scheduled_start"], announced_ss)) <= SCHEDULED_SUPERSEDE_SEC),
@@ -1195,6 +1214,23 @@ if __name__ == "__main__":
     _p = _run_v1(_prev_v1(info_source="personal"))
     assert _p["scheduled_start"] == "2026-10-24T14:30:00Z", "personal 출처가 API 로 덮임"
     print("✓ (v4.7.2) preview_build 자동 수정 권한 — manual 출처 · manual 권한 유지 / 기본·YT 는 API 로 덮음 / personal 유지")
+
+    # (v4.11.14) 취소된 예고 — API 가 아직 upcoming 으로 보여도 · URL 없는 자리표시 TTL 이 지나도 그날 끝(KST 04:00)까지 그대로
+    _cx = {"at": "2026-10-24T09:00:00Z", "by": "tweet", "tweet_id": "1", "tweet_url": "https://x.com/a/status/1"}
+    _pc = _prev_v1(cancelled=_cx)
+    _pc["items"][0]["state"] = "upcoming"
+    _kept = build_preview(channels_cfg, {"V1": _api_12}, _pc, "2026-10-24T13:00:00Z")   # 22:00 KST — 시작 지남
+    _k = next(i for i in _kept[0]["items"] if i.get("video_id") == "V1")
+    assert _k == _pc["items"][0], "취소된 예고가 수집으로 바뀜"
+    assert "V1" not in _kept[2], "취소된 예고에 확인(wake)이 예약됨"
+    _gone = build_preview(channels_cfg, {"V1": _api_12}, _pc, "2026-10-24T19:00:00Z")    # 10/25 04:00 KST
+    assert not _gone[0]["items"] and _gone[3][0]["cancelled"] == _cx, "그날 끝에 아카이브로 안 옮김"
+    _ph = preview.make_item(channel_key="arale", state="announced", source="x-relay", now_iso="2026-10-24T01:00:00Z",
+                            scheduled_start="2026-10-24T13:00:00Z", expires_at="2026-10-24T16:00:00Z")
+    _ph["cancelled"] = _cx
+    _keep_ph = build_preview(channels_cfg, {}, {"items": [_ph]}, "2026-10-24T17:00:00Z")[0]["items"]   # expires_at 지남
+    assert [i["id"] for i in _keep_ph] == [_ph["id"]], "URL 없는 취소 예고가 TTL 로 사라짐"
+    print("✓ (v4.11.14) 취소된 예고 — 수집이 안 바꿈 · wake 없음 · TTL 무시 · 그날 끝(04:00 KST)에 아카이브")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 17개 self-test scenarios passed ✓ (v4a)")

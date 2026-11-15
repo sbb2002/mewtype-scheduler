@@ -1168,6 +1168,60 @@ def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
     return changed
 
 
+def _mark_broadcast_cancelled(gh, snapshot: dict, now_iso: str, action: str, cancel: dict) -> bool:
+    """(v4.11.14) 예고를 내리지 않고 `cancelled` 를 붙인다 — 팬 화면은 그날 끝(KST 04:00)까지 「취소됨」으로 보여 주고,
+    그 뒤 수집(preview_build)이 아카이브로 옮긴다. id 로 찾고, 없으면 False. base-sha 충돌 시 1회 재시도."""
+    changed = False
+    prev = new_sha = None
+    sid = snapshot.get("id")
+    for attempt in (1, 2):
+        prev, sha = gh.read_json(_PREVIEW_PATH)
+        prev = prev or {}
+        items = [dict(b) for b in prev.get("items", []) or []]
+        it = next((b for b in items if sid and b.get("id") == sid), None)
+        if it is None:
+            return False
+        it["cancelled"] = dict(cancel)
+        it["last_updated"] = now_iso
+        new_pv = dict(prev, items=items, generated_at=now_iso)
+        try:
+            changed, new_sha = gh.write_json(_PREVIEW_PATH, new_pv, prev_sha=sha, message=f"data: {action} {now_iso}")
+            break
+        except ConflictError:
+            if attempt == 2:
+                raise
+            log.info("cancel: preview.json 충돌 — 재계산 후 재시도")
+    if changed:
+        _save_undo(gh, action=action, prev_content=prev, new_sha=new_sha, now_iso=now_iso)
+        if snapshot.get("video_id"):          # 예약된 확인은 지운다 — 남겨 두면 확인이 영상을 다시 불러온다(_remove_broadcast 와 같음)
+            try:
+                from . import apply as _apply
+                _apply.cancel_video_checks(snapshot["video_id"], reason=action)
+            except Exception:  # noqa: BLE001
+                log.warning("예약된 확인 취소 실패", exc_info=True)
+        _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=snapshot.get("channel_key", ""),
+                        detail=f"{action} · {snapshot.get('state')}→cancelled",
+                        id=sid, video_id=snapshot.get("video_id"),
+                        from_state=snapshot.get("state"), to_state="cancelled",
+                        title=snapshot.get("title"), collab_with=snapshot.get("collab_with"))
+    return bool(changed)
+
+
+_TWEET_ID_IN_TAG_RE = re.compile(r"tweet-(\d{5,25})")
+
+
+def _cancel_info(by: str, now_iso: str, *, tweet_id=None, tag: str | None = None, tweet_url: str | None = None) -> dict:
+    """(v4.11.14) 예고의 `cancelled` 값. 트윗 id 는 직접 주거나 인입 태그(`…#1tweet-<id>`)에서 꺼낸다.
+    tweet_url 이 없으면 x.com/i/status/<id> — 프론트가 트윗 시트에서 못 찾을 때 여는 주소."""
+    tid = str(tweet_id) if tweet_id else None
+    if not tid and tag:
+        m = _TWEET_ID_IN_TAG_RE.search(tag)
+        tid = m.group(1) if m else None
+    if tid and not tweet_url:
+        tweet_url = f"https://x.com/i/status/{tid}"
+    return {"at": now_iso, "by": by, "tweet_id": tid, "tweet_url": tweet_url}
+
+
 def _ingest_queue_push(gh, raw: str, title: str, now_iso: str) -> None:
     """ECHO/DRY-RUN 중 받은 스케줄 트윗 원문을 data 브랜치 큐에 적재.
 
@@ -3365,7 +3419,8 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     _maybe_personal_schedule(raw, tag=tag, channel_key=channel_key, name=name,
                              handle=handle, now_iso=now_iso, via=via, quote=quote_src)
     # (v3.8.7) 기존 예고 취소/변경 여부는 새 예고 생성과 별개로 항상 확인
-    _maybe_broadcast_change(gh, raw, channel_key, now_iso, channels_cfg, via=via, tag=tag, quote=quote_src)
+    _maybe_broadcast_change(gh, raw, channel_key, now_iso, channels_cfg, via=via, tag=tag, quote=quote_src,
+                            tweet_id=parsed.get("id"), tweet_url=parsed.get("url"))
     return mode
 
 
@@ -4290,18 +4345,39 @@ def _detect_broadcast_change(raw: str, channel_key: str, now_iso: str, items: li
     return {"action": action, "target_ids": ids, "when_iso": when_iso, "candidates": cands, "reason": reason}
 
 
-def _terminate_broadcast(gh, item: dict, now_iso: str, action: str) -> bool:
+def _cancel_suppress_ttl(item: dict, now_iso: str) -> int:
+    """(v4.11.14) 취소 표시로 남긴 예고의 재등록 차단 길이(초) — 그날 끝(KST 04:00)에 아카이브된 뒤에도 12시간.
+    남겨 둔 동안엔 수집이 그 항목을 건드리지 않고, 아카이브 직후 같은 영상이 새 예고로 되살아나지 않게 한다."""
+    from . import preview as _pv
+    until = _pv.cancel_until(dict(item, cancelled={"at": now_iso}))
+    try:
+        sec = (datetime.fromisoformat(until.replace("Z", "+00:00"))
+               - datetime.fromisoformat(now_iso.replace("Z", "+00:00"))).total_seconds()
+    except (ValueError, AttributeError):
+        sec = 0
+    return int(max(0, sec)) + 12 * 3600
+
+
+def _terminate_broadcast(gh, item: dict, now_iso: str, action: str, cancel: dict | None = None) -> bool:
     """(v4a) `/del` 의 terminate 와 동일 — 예고 삭제(아카이브) + 그 영상 URL 을 12h 재등록 차단.
-    영상 URL 이 없으면(채널 자리표시) 차단은 생략하고 일반 삭제만 한다. 삭제됐으면 True."""
-    removed = writeclient.call_write(
-        "remove_broadcast", gh=gh, snapshot=item, now_iso=now_iso, action=action,
-    ).get("removed")
+    영상 URL 이 없으면(채널 자리표시) 차단은 생략하고 일반 삭제만 한다. 삭제됐으면 True.
+    (v4.11.14) cancel 이 주어지면 내리지 않고 「취소됨」 표시(`_mark_broadcast_cancelled`) — 차단은 그날 끝 + 12h."""
+    if cancel is not None:
+        removed = writeclient.call_write(
+            "cancel_broadcast", gh=gh, snapshot=item, now_iso=now_iso, action=action, cancel=cancel,
+        ).get("cancelled")
+        ttl = _cancel_suppress_ttl(item, now_iso)
+    else:
+        removed = writeclient.call_write(
+            "remove_broadcast", gh=gh, snapshot=item, now_iso=now_iso, action=action,
+        ).get("removed")
+        ttl = 12 * 3600
     url = item.get("url")
     if removed and url and xtweet.YT_VIDEO_RE.search(url):
         try:
             st, sh = gh.read_json(_ADMIN_STATE_PATH)
             gh.write_json(_ADMIN_STATE_PATH,
-                          admin.add_suppress(st or admin.default_admin_state(), url=url, now_iso=now_iso),
+                          admin.add_suppress(st or admin.default_admin_state(), url=url, now_iso=now_iso, ttl_sec=ttl),
                           prev_sha=sh, message=f"data: suppress += {url} {now_iso}")
         except Exception:  # noqa: BLE001
             log.exception("suppress 추가 실패")
@@ -4326,7 +4402,8 @@ def _change_gate_text(raw: str | None, quote: str | None) -> bool:
 
 def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
                             channels_cfg: dict, *, via: str = "ingest", tag: str | None = None,
-                            quote: str | None = None) -> None:
+                            quote: str | None = None, tweet_id: str | None = None,
+                            tweet_url: str | None = None) -> None:
     """(v3.8.7) 개인 트윗에 `配信` 키워드 · 변경어 · 후보 예고를 가리키는 인용 URL 중 하나가 있으면
     (v4.7.2 확장), 그 멤버가 **호스트**인 기존 예고(자동 수정 권한 X&YT 인 것만)를
     취소·변경하는 글인지 LLM 으로 판정해 반영한다.
@@ -4381,7 +4458,9 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
         target = by_id[iid]
         try:
             if plan["action"] == "del":
-                if _terminate_broadcast(gh, target, now_iso, f"{channel_key} 방송 취소(LLM)"):
+                # (v4.11.14) 트윗으로 감지한 취소는 바로 내리지 않고 그날 끝까지 「취소됨」으로 남긴다(운영자 결정 2026-11-15)
+                cx = _cancel_info("tweet", now_iso, tweet_id=tweet_id, tag=tag, tweet_url=tweet_url)
+                if _terminate_broadcast(gh, target, now_iso, f"{channel_key} 방송 취소(LLM)", cancel=cx):
                     removed.append(target)
                     if target.get("url") and xtweet.YT_VIDEO_RE.search(target["url"]):
                         unsup.append(target["url"])
@@ -4407,7 +4486,7 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
         }, now_iso)
     if removed:
         _llm_record(gh, "broadcast_change", channel_key,
-                    f"방송 취소 {len(removed)}건 — " + " / ".join(
+                    f"방송 취소 {len(removed)}건(취소됨 표시) — " + " / ".join(
                         f"{_kst_label(x.get('scheduled_start'))} {(x.get('title_ko') or x.get('title') or '')[:24]}" for x in removed),
                     plan.get("reason"), undo={"type": "restore_items", "items": removed, "unsuppress": unsup},
                     now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote))
@@ -4492,7 +4571,12 @@ def _auto_edit_once_core(gh, item_id: str, level: str, now_iso: str) -> str:
             if plan is None:
                 msgs.append("트윗 판정 실패(Groq)")
             elif plan["action"] == "del" and plan["target_ids"]:
-                removed = _terminate_broadcast(gh, item, now_iso, f"{ck} 방송 취소(1회 판정)")
+                _last = tw[-1] if tw else {}
+                _sm = _STATUS_ID_RE.search(_last.get("url") or "")
+                removed = _terminate_broadcast(
+                    gh, item, now_iso, f"{ck} 방송 취소(1회 판정)",
+                    cancel=_cancel_info("tweet", now_iso, tweet_id=(_sm.group(1) if _sm else _last.get("id")),
+                                        tweet_url=_last.get("url")))
                 if removed:
                     unsup = [item["url"]] if item.get("url") and xtweet.YT_VIDEO_RE.search(item["url"]) else []
                     _llm_record(gh, "broadcast_change", ck,
@@ -4502,7 +4586,7 @@ def _auto_edit_once_core(gh, item_id: str, level: str, now_iso: str) -> str:
                                 now_iso=now_iso, input=_inp(raw, channel_key=ck))
                     _preserve_raw("broadcast_change", raw, {"channel_key": ck, "action": "del", "via": "1회 판정",
                                                             "reason": plan.get("reason")}, now_iso)
-                msgs.append("트윗 판정: 취소 — 예고 내림" if removed else "트윗 판정: 취소 — 내리기 실패")
+                msgs.append("트윗 판정: 취소 — 「취소됨」 표시" if removed else "트윗 판정: 취소 — 표시 실패")
                 return " · ".join(msgs)
             elif plan["action"] == "edit" and plan["target_ids"] and plan.get("when_iso"):
                 when = plan["when_iso"]
@@ -5554,7 +5638,15 @@ def _llm_undo(gh, action_id: str, now_iso: str) -> dict:
 
         if t == "restore_items":
             for snap in u.get("items") or []:
-                if find(snap):
+                cur = find(snap)
+                if cur is not None and cur.get("cancelled"):   # (v4.11.14) 「취소됨」으로 남긴 예고 — 표시만 걷는다
+                    cur.pop("cancelled", None)
+                    cur["last_updated"] = now_iso
+                    applied.append(f"취소 표시 해제 {label(cur)}")
+                    if cur.get("video_id"):
+                        restored.append(cur["video_id"])
+                    continue
+                if cur:
                     skipped.append(f"{label(snap)} — 이미 예고에 있음")
                     continue
                 items.append(dict(snap, last_updated=now_iso))
@@ -9127,18 +9219,27 @@ if __name__ == "__main__":
             _llm_mod5.LLMClient = _FakeChangeLLM
             os.environ["GROQ_API_KEY"] = "test-key"
 
-            # del → state=none 패치 + _activate_state_edit 로 즉시 제거·아카이브
+            # (v4.11.14) del → 내리지 않고 「취소됨」 표시(cancelled) — 트윗 id 는 인자 또는 인입 태그에서
             _FakeChangeLLM._RESULT = {"action": "del", "when": None}
             gbc1 = _FakeGH()
             gbc1.store[_PREVIEW_PATH] = {"items": [dict(_NONOKA_ITEM)]}
             _maybe_broadcast_change(gbc1, "本日こちらの配信なしで、今日おやすみです！",
-                                    "nonoka", "2026-09-22T12:30:00Z", _CFG_BC)
+                                    "nonoka", "2026-09-22T12:30:00Z", _CFG_BC,
+                                    tag="p#https://x.com/#1tweet-2121894709891408012")
             pv_bc1 = (gbc1.store.get(_PREVIEW_PATH) or {}).get("items") or []
-            assert not pv_bc1, pv_bc1
-            # (v4a) 취소 = `/del` terminate 와 동일 — 아카이브에 남기지 않고 지운다(영상 URL 이 있으면 12h 재등록 차단)
+            assert len(pv_bc1) == 1 and pv_bc1[0]["state"] == "watching", pv_bc1
+            assert pv_bc1[0]["cancelled"] == {"at": "2026-09-22T12:30:00Z", "by": "tweet",
+                                              "tweet_id": "2121894709891408012",
+                                              "tweet_url": "https://x.com/i/status/2121894709891408012"}, pv_bc1
             arch_bc1 = (gbc1.store.get(_PREVIEW_ARCHIVE_PATH) or {}).get("items") or []
             assert not any(a.get("id") == "pv_nonoka1" for a in arch_bc1), arch_bc1
-            print("[OK] _maybe_broadcast_change (LLM del → /del terminate 와 동일하게 즉시 제거)")
+            # 반려(되돌리기) → 표시만 걷힌다
+            _acts = (gbc1.store.get("llm_actions.json") or {}).get("items") or []
+            _aid = next(a["id"] for a in _acts if a.get("kind") == "broadcast_change" and a.get("undo"))
+            _un = _llm_undo(gbc1, _aid, "2026-09-22T12:40:00Z")
+            _it_un = gbc1.store[_PREVIEW_PATH]["items"][0]
+            assert "cancelled" not in _it_un and _un["applied"], (_un, _it_un)
+            print("[OK] _maybe_broadcast_change (LLM del → 「취소됨」 표시 · 트윗 id = 태그 · 반려하면 표시 해제)")
 
             # edit → scheduled_start 갱신, 항목은 유지
             _FakeChangeLLM._RESULT = {"action": "edit", "when": "09/23 23:00"}
