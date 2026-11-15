@@ -1099,12 +1099,14 @@ export function buildTodayCards(ctx, key, opts = {}) {
   if (!all.length && !mT.length) { sec.appendChild(el("div", "tt-today__none", "오늘 남은 예고가 없습니다.")); return sec; }
   if (!all.length) sec.appendChild(el("div", "tt-today__none", "오늘 남은 예고가 없습니다."));   // (v4.9.6) 오늘은 비고 내일만 있는 경우
   const stack = el("div", "tt-today__stack");
-  const bigIdx = all.findIndex((g) => g.state !== "ended");
+  // (v4.11.16) 큰 카드 = 종료 · 취소가 아닌 첫 카드 — 취소된 예고가 큰 자리(도넛 54px)를 차지해 일반 카드(46px)보다 커 보였다
+  const bigIdx = all.findIndex((g) => g.state !== "ended" && !isCancelled(g.entry.item));
   all.forEach((g, i) => stack.appendChild(todayCard(g.entry, g.state, ctx, i === bigIdx, key)));
   if (mT.length) {
     stack.appendChild(el("div", "tt-today__div", `내일 예고 · ${mdw(ctx.de)} 04:00 ~`));   // (v4.9.6) 내일 구분선
-    // 오늘 종료 외 카드가 없으면 내일 첫 카드가 big (bigIdx < 0)
-    mT.forEach((entry, i) => stack.appendChild(todayCard(entry, "upcoming", ctx, bigIdx < 0 && i === 0, key)));
+    // 오늘 종료 · 취소 외 카드가 없으면 내일 첫(취소 아닌) 카드가 big (bigIdx < 0)
+    const bigT = bigIdx < 0 ? mT.findIndex((e) => !isCancelled(e.item)) : -1;   // 내일 쪽도 취소된 예고는 큰 카드로 안 쓴다
+    mT.forEach((entry, i) => stack.appendChild(todayCard(entry, "upcoming", ctx, i === bigT, key)));
   }
   sec.appendChild(stack);
   return sec;
