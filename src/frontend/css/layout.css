@@ -44,6 +44,10 @@
   --color-ph-base: #141414;
   --color-tint-ink: #ffffff;             /* 색을 옅게 깐 배지 글자 = color-mix(색, 이 값) */
   --shadow-pop: rgba(0, 0, 0, 0.6);
+  /* 이후 예고를 펼쳤을 때 새로 늘어난 칸 — 예고판보다 약간 밝은 바탕 · 옅은 점선 경계 · 접힌 자국 그림자 */
+  --color-fold-bg: color-mix(in srgb, var(--color-bg-secondary) 93%, #ffffff);
+  --color-fold-line: rgba(255, 255, 255, 0.16);
+  --color-fold-crease: rgba(0, 0, 0, 0.28);
 }
 
 html {

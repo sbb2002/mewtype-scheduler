@@ -43,6 +43,9 @@
   --color-ph-base: #f0eefa;
   --color-tint-ink: #1c1d2b;
   --shadow-pop: rgba(40, 30, 80, 0.18);
+  --color-fold-bg: #fcfbff;                 /* 패널이 이미 흰색이라 더 밝게는 못 해 아주 옅은 보랏빛 흰색 */
+  --color-fold-line: rgba(35, 36, 54, 0.16);
+  --color-fold-crease: rgba(40, 30, 80, 0.07);
 
   /* notices.css */
   --ntc-surface2: #f0eefa;

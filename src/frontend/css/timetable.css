@@ -487,15 +487,14 @@ a.tt-pop__img { cursor: pointer; }
 #board.board--tt:not(.board--cards) > .tt-fold { transition: border-radius 0.2s; }
 #board.board--tt:not(.board--cards).board--later-open > .tt-fold {
   border-radius: 10px 10px 0 0;
-  border-bottom-color: var(--color-line-soft);
+  border-bottom-color: transparent;   /* 경계선은 아래 .tt-later 의 옅은 점선이 맡는다 */
 }
 #board.board--tt:not(.board--cards) > .tt-later {
   margin-top: 0;
   padding: 14px;
   border: 1px solid var(--color-border);
-  border-top: 0;
+  border-top: 1px dashed var(--color-fold-line);
   border-radius: 0 0 10px 10px;
-  background: var(--color-bg-secondary);
 }
 
 /* (v4.9.6) PC 표 보기의 이후 예고 — 이번주 표(왼쪽) + 먼 미래 표(오른쪽). 1000px 이하는 한 칸으로 쌓는다 */
@@ -604,6 +603,12 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 }
 .board--later-open .lane__later,
 .lane__later.is-closing { display: flex; }
+/* 펼쳐서 새로 늘어난 칸 = 접혀 있던 종이가 펴진 느낌: 예고판보다 약간 밝은 바탕 + 옅은 점선 경계 + 경계 바로 아래 접힌 자국 그림자 */
+.lane__later, #board.board--tt:not(.board--cards) > .tt-later {
+  background-color: var(--color-fold-bg);
+  background-image: linear-gradient(to bottom, var(--color-fold-crease), transparent 12px);
+  border-top: 1px dashed var(--color-fold-line);
+}
 .lane__later .lane__item { flex: none; }
 .lane__later-none {
   margin: 0;
