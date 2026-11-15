@@ -484,9 +484,20 @@ button.tws-md__cell:active .tws-md__play { transform: scale(0.94); }
 .tws-tw.is-arriving { animation: tws-rise 560ms cubic-bezier(0.2, 1.15, 0.3, 1) both; }
 @keyframes tws-rise { from { opacity: 0; transform: translateY(36px) scale(0.98); } 55% { opacity: 1; } to { opacity: 1; transform: none; } }
 .tws-tw.is-fresh { animation: tws-fresh 1400ms ease-out; border-radius: 14px; }
-/* (v4.11.14) 취소된 예고에서 열었을 때 — 취소 글이 한 번 빛나고, 글 아래에 어떤 예고가 취소됐는지 한 줄 */
-.tws-tw.is-cxhit { animation: tws-fresh 1600ms ease-out; border-radius: 14px; }
-.tws-cxnote { margin-top: 4px; padding-top: 6px; border-top: 1px dashed color-mix(in srgb, var(--mi) 35%, transparent); font-size: 0.72rem; opacity: 0.85; }
+/* (v4.11.14) 취소된 예고에서 열었을 때 — 취소 글 테두리가 민트 글로우로 세 번 번쩍인 뒤 민트 테두리가 남는다.
+   민트(--cx-hit) = 멤버 5명 색(아라레 황토 · 유노 분홍빨강 · 노노카 연분홍 · 리츠 파랑 · 미야코 보라)과
+   사이트 상태색(빨강 방송 중 · 호박색 1시간 이내 · 보라 합동 · 슬레이트 예고) 어느 것과도 겹치지 않는 색 */
+:root { --cx-hit: #19e3b1; }
+:root[data-theme="light"] { --cx-hit: #00a982; }
+.tws-tw.is-cxtarget { border-radius: 14px; box-shadow: 0 0 0 2px var(--cx-hit); }
+.tws-tw.is-cxhit { border-radius: 14px; animation: tws-cxglow 2100ms ease-out; }
+@keyframes tws-cxglow {
+  0%, 30%, 63%  { box-shadow: 0 0 0 2px var(--cx-hit), 0 0 0 0 transparent; }
+  12%, 45%, 78% { box-shadow: 0 0 0 3px var(--cx-hit), 0 0 22px 7px color-mix(in srgb, var(--cx-hit) 75%, transparent); }
+  100%          { box-shadow: 0 0 0 2px var(--cx-hit), 0 0 0 0 transparent; }
+}
+.tws-cxnote { margin-top: 4px; padding-top: 6px; border-top: 1px dashed var(--cx-hit); font-size: 0.72rem; font-weight: 700; color: var(--mi); }
+.tws-cxnote::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--cx-hit); box-shadow: 0 0 6px var(--cx-hit); vertical-align: 1px; }
 @keyframes tws-fresh {
   0% { box-shadow: 0 0 0 0 transparent; }
   18% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--mi) 70%, transparent); }
@@ -646,7 +657,7 @@ button.tws-md__cell:active .tws-md__play { transform: scale(0.94); }
   .tws__newchip { transition: opacity var(--t-fast) !important; transform: none !important; }
   .tws-tw.is-arriving { animation: tws-fade 200ms ease both; }   /* (v4.9.1) 떠오르기 · 흔들기 · 빛내기 대신 투명도만 */
   @keyframes tws-fade { from { opacity: 0; } to { opacity: 1; } }
-  .tws-tw.is-fresh, .tws-tw.is-cxhit { animation: none; }
+  .tws-tw.is-fresh, .tws-tw.is-cxhit { animation: none; }   /* 취소 글은 번쩍임 없이 민트 테두리(.is-cxtarget)만 */
   .tws__fab, .tws__fab.is-on { transform: none; transition: opacity var(--t-fast); }
   .tws__fab.is-on .tws__fab-in, .tws__fab.is-on .tws__fab-in::before, .tws__fab.is-on .tws__fab-in svg { animation: none; }
   .tws__rz::after, .tws-xcover::after { transition: opacity var(--t-fast); }

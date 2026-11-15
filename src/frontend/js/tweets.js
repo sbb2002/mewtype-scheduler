@@ -1063,10 +1063,35 @@ function _renderFeed(fresh) {
           - Math.max(12, (feed.clientHeight - el.offsetHeight) / 2);
         feed.scrollTop = Math.max(0, center() + 120);   // 살짝 아래에서 시작해 올라오며 자리 잡는다
         if (fx.note && !el.querySelector(".tws-cxnote")) el.appendChild(_el("div", { cls: "tws-cxnote", text: fx.note }));
+        const live = () => S === s && s.open && el.isConnected;
+        const flash = () => {
+          if (!live()) return;
+          el.classList.add("is-cxtarget");
+          _anim(el, "is-cxhit");
+          // PC 시트는 X 카드가 불러와지며 몇 초 더 자란다 — 번쩍임이 끝날 때 안내 줄까지 보이게 한 번 더 맞춘다
+          setTimeout(() => {
+            if (!live()) return;
+            const want = Math.max(0, Math.min(center(), feed.scrollHeight - feed.clientHeight));
+            if (Math.abs(feed.scrollTop - want) > 16) feed.scrollTo({ top: want, behavior: _reduce() ? "auto" : "smooth" });
+          }, _reduce() ? 0 : 2150);
+        };
         setTimeout(() => {
-          if (!S || S !== s || !s.open || !el.isConnected) return;
+          if (!live()) return;
           feed.scrollTo({ top: Math.max(0, center()), behavior: _reduce() ? "auto" : "smooth" });
-          setTimeout(() => { if (el.isConnected) _anim(el, "is-cxhit"); }, _reduce() ? 0 : 360);
+          // 내려가는 동안 위쪽 X 카드가 실제 높이로 커지면 자리가 밀린다 — 멈춘 뒤 한 번 더 맞추고(안내 줄까지 보이게) 빛낸다
+          let done = false;
+          const settle = () => {
+            if (done || !live()) return;
+            done = true;
+            feed.removeEventListener("scrollend", settle);
+            const want = Math.max(0, Math.min(center(), feed.scrollHeight - feed.clientHeight));
+            if (Math.abs(feed.scrollTop - want) > 16) {
+              feed.scrollTo({ top: want, behavior: _reduce() ? "auto" : "smooth" });
+              setTimeout(flash, _reduce() ? 0 : 320);
+            } else flash();
+          };
+          feed.addEventListener("scrollend", settle);
+          setTimeout(settle, _reduce() ? 0 : 650);   // scrollend 를 모르는 브라우저 · 움직이지 않은 경우
         }, _reduce() ? 0 : 420);
       } else feed.scrollTop = feed.scrollHeight;
     } else if (fresh) {
