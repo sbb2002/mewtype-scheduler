@@ -207,7 +207,8 @@ export function openCancelTweet(ck, id, from, item) {
   document.dispatchEvent(new CustomEvent("mew:cancel-tweet", { detail: d }));
   return d.handled;
 }
-const SEEN_CX = new Set();   // 「취소됨」으로 바뀌는 움직임을 이미 보여 준 예고 id — 폴링으로 다시 그려도 반복하지 않는다
+const SEEN_CX = new Set();
+const CX_IMG_KEYS = ["arale", "yuno", "nonoka", "ritsu", "miyako"];   // (v4.11.15) assets/cx/<키>.webp 가 있는 멤버   // 「취소됨」으로 바뀌는 움직임을 이미 보여 준 예고 id — 폴링으로 다시 그려도 반복하지 않는다
 const cxHasTweet = (item) => !!(item.cancelled && (item.cancelled.tweet_id || item.cancelled.tweet_url));
 /** 금색 프리미어 태그 — 빛줄기가 태그 안에서만 지나간다(css .gold). small = 블록 썸네일용(별 없음) */
 export function goldTag(cls, text, star = false) {
@@ -1040,6 +1041,14 @@ function todayCard(entry, state, ctx, big, laneKey) {
   body.appendChild(main);
   if (cx) {                                   // (v4.11.14) 원래 도넛 그대로 — 회색으로 가득 찬 원 + 「취소됨」
     const ring = el("div", "tcard__ring tcard__ring--up tcard__ring--cx");
+    // (v4.11.15) 원 안쪽(회색 링 안)에 그 레인 멤버의 반투명 이미지 — 글자 뒤, 원 밖으로 안 나간다(css .tcard__cximg)
+    const who = CX_IMG_KEYS.includes(laneKey) ? laneKey : it.channel_key;
+    if (CX_IMG_KEYS.includes(who)) {
+      const img = el("i", "tcard__cximg");
+      img.setAttribute("aria-hidden", "true");
+      img.style.backgroundImage = `url("assets/cx/${who}.webp")`;
+      ring.appendChild(img);
+    }
     const t = el("span");
     t.append(el("b", "", "취소됨"));
     ring.appendChild(t);

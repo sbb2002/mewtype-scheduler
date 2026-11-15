@@ -1072,7 +1072,7 @@ function _renderFeed(fresh) {
             if (!live()) return;
             const want = Math.max(0, Math.min(center(), feed.scrollHeight - feed.clientHeight));
             if (Math.abs(feed.scrollTop - want) > 16) feed.scrollTo({ top: want, behavior: _reduce() ? "auto" : "smooth" });
-          }, _reduce() ? 0 : 1550);
+          }, _reduce() ? 0 : 2250);
         };
         setTimeout(() => {
           if (!live()) return;

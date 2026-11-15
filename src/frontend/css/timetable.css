@@ -942,6 +942,14 @@ html.wk-lock .tt-pop { z-index: 900; }          /* 시트 위에 카드 팝업 *
 .tcard__cxhint { font-size: 0.7rem; color: var(--color-text-muted); }
 .tcard__ring.tcard__ring--cx { --p: 100; background: conic-gradient(var(--color-ended) calc(var(--p) * 1%), var(--color-ring-track) 0); }
 .tcard__ring--cx b { color: var(--color-ended); font-size: 0.72rem; font-weight: 600; letter-spacing: -0.02em; }
+/* (v4.11.15) 도넛 원 안쪽의 멤버 이미지 — 안쪽 원(::before, inset 4px)과 같은 자리 · 같은 원으로 잘라 글자 뒤에 반투명하게.
+   링(회색 테두리) 밖으로는 나가지 않는다. 글자는 바탕색 그림자로 이미지 위에서도 읽히게 */
+.tcard__cximg { position: absolute; inset: 4px; border-radius: 50%; overflow: hidden; pointer-events: none;
+  background: center / cover no-repeat; opacity: 0.42; }
+.tcard__ring--cx span { position: relative; z-index: 1; }
+.tcard__ring--cx b { text-shadow: 0 0 3px var(--color-bg), 0 0 6px var(--color-bg); }
+.tcard.is-cx-in .tcard__cximg { animation: cx-img 0.6s ease-out 0.35s both; }
+@keyframes cx-img { from { opacity: 0; transform: scale(0.85); } to { opacity: 0.42; transform: none; } }
 .tcard--big .tcard__ring--cx b { font-size: 0.78rem; }
 .tcard.is-cx-in .tcard__ring--cx { animation: cx-fill 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .tcard.is-cx-in .tcard__ring--cx span { animation: cx-pop 0.45s cubic-bezier(0.25, 1.4, 0.45, 1) 0.45s both; }
@@ -961,5 +969,5 @@ html.wk-lock .tt-pop { z-index: 900; }          /* 시트 위에 카드 팝업 *
 .tt-pop__btn.tt-pop__btn--cx { background: var(--color-raised); color: var(--color-text); border: 1px solid var(--color-raised-edge); cursor: pointer; }
 .tt-pop__btn.tt-pop__btn--cx:hover { background: var(--color-hover); }
 @media (prefers-reduced-motion: reduce) {
-  .tcard.is-cx-in .tcard__ring--cx, .tcard.is-cx-in .tcard__ring--cx span, .tcard.is-cx-in .tcard__when > b:first-child::after, .is-cx-nope { animation: none; }
+  .tcard.is-cx-in .tcard__ring--cx, .tcard.is-cx-in .tcard__ring--cx span, .tcard.is-cx-in .tcard__cximg, .tcard.is-cx-in .tcard__when > b:first-child::after, .is-cx-nope { animation: none; }
 }
