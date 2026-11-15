@@ -157,7 +157,7 @@ config/channels.json   # 채널 단일 소스 — channel_order(5인) · channel
                                              //   자리표시 TTL · 시각 override)이 바꾸지 않고, 예정 시각이 속한 하루(KST 04:00 ~ 다음 04:00)의 끝에
                                              //   아카이브로 옮긴다(`preview.cancel_until`). 영상 URL 차단은 그날 끝 + 12h. 반려(LLM 판단 되돌리기) = 필드 제거.
                                              //   프론트: 도넛 = 회색으로 가득 찬 원 + 「취소됨」, 시각 취소선, PC 블록 = 점선 테두리 + 「✕ 취소됨」,
-                                             //   누르면 YouTube 대신 트윗 시트에서 그 글 — 민트 글로우 한 번 크게 번쩍인 뒤 원래 테두리(없으면 tweet_url 새 탭). 길게 눌러 복사는 YouTube 주소 그대로
+                                             //   누르면 YouTube 대신 트윗 시트에서 그 글 — 카드 안쪽 민트 글로우가 한 번 크게 번쩍인 뒤 원래대로(카드 밖으로 안 번짐)(없으면 tweet_url 새 탭). 길게 눌러 복사는 YouTube 주소 그대로
       "membership": false,                  // true = 회원전용. watching 스킵, 시작 신호→live 직행, API 확인 안 함
 
       "title": "【チラズアート】…",           // JP 원문. announced 단계엔 null 가능

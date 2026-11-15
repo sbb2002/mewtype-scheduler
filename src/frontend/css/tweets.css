@@ -484,16 +484,24 @@ button.tws-md__cell:active .tws-md__play { transform: scale(0.94); }
 .tws-tw.is-arriving { animation: tws-rise 560ms cubic-bezier(0.2, 1.15, 0.3, 1) both; }
 @keyframes tws-rise { from { opacity: 0; transform: translateY(36px) scale(0.98); } 55% { opacity: 1; } to { opacity: 1; transform: none; } }
 .tws-tw.is-fresh { animation: tws-fresh 1400ms ease-out; border-radius: 14px; }
-/* (v4.11.14) 취소된 예고에서 열었을 때 — 취소 글로 이동한 뒤 테두리가 민트 글로우로 한 번 크게 번쩍이고 원래대로 사라진다.
+/* (v4.11.14) 취소된 예고에서 열었을 때 — 취소 글로 이동한 뒤 카드 안쪽이 민트 글로우로 한 번 크게 번쩍이고 원래대로 사라진다.
+   카드(.tws-tw__track) 위에 덮개(::after)를 얹어 안쪽 그림자로만 빛낸다 — 카드 밖으로 튀어나가지 않는다.
    민트(--cx-hit) = 멤버 5명 색(아라레 황토 · 유노 분홍빨강 · 노노카 연분홍 · 리츠 파랑 · 미야코 보라)과
    사이트 상태색(빨강 방송 중 · 호박색 1시간 이내 · 보라 합동 · 슬레이트 예고) 어느 것과도 겹치지 않는 색 */
 :root { --cx-hit: #19e3b1; }
 :root[data-theme="light"] { --cx-hit: #00a982; }
-.tws-tw.is-cxhit { border-radius: 14px; animation: tws-cxglow 1500ms cubic-bezier(0.2, 0.7, 0.3, 1); }
+.tws-tw.is-cxhit { animation: tws-cxmark 1500ms linear; }   /* 끝 신호용(tweets.js _anim 이 이 animationend 로 클래스를 뗀다) */
+@keyframes tws-cxmark { from { opacity: 1; } to { opacity: 1; } }
+.tws-tw.is-cxhit .tws-tw__track { position: relative; }
+.tws-tw.is-cxhit .tws-tw__track::after {
+  content: ""; position: absolute; inset: 0; z-index: 3; border-radius: 12px; pointer-events: none;
+  animation: tws-cxglow 1500ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
 @keyframes tws-cxglow {
-  0%   { box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent; }
-  14%  { box-shadow: 0 0 0 4px var(--cx-hit), 0 0 36px 14px color-mix(in srgb, var(--cx-hit) 85%, transparent); }
-  100% { box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent; }
+  0%   { box-shadow: inset 0 0 0 0 transparent, inset 0 0 0 0 transparent; background: transparent; }
+  14%  { box-shadow: inset 0 0 0 5px var(--cx-hit), inset 0 0 56px 18px color-mix(in srgb, var(--cx-hit) 80%, transparent);
+         background: color-mix(in srgb, var(--cx-hit) 16%, transparent); }
+  100% { box-shadow: inset 0 0 0 0 transparent, inset 0 0 0 0 transparent; background: transparent; }
 }
 .tws-cxnote { margin-top: 4px; padding-top: 6px; border-top: 1px dashed var(--cx-hit); font-size: 0.72rem; font-weight: 700; color: var(--mi); }
 .tws-cxnote::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--cx-hit); box-shadow: 0 0 6px var(--cx-hit); vertical-align: 1px; }
@@ -656,7 +664,7 @@ button.tws-md__cell:active .tws-md__play { transform: scale(0.94); }
   .tws__newchip { transition: opacity var(--t-fast) !important; transform: none !important; }
   .tws-tw.is-arriving { animation: tws-fade 200ms ease both; }   /* (v4.9.1) 떠오르기 · 흔들기 · 빛내기 대신 투명도만 */
   @keyframes tws-fade { from { opacity: 0; } to { opacity: 1; } }
-  .tws-tw.is-fresh, .tws-tw.is-cxhit { animation: none; }   /* 취소 글은 번쩍임 없이 자리만 맞춘다(안내 줄은 그대로) */
+  .tws-tw.is-fresh, .tws-tw.is-cxhit, .tws-tw.is-cxhit .tws-tw__track::after { animation: none; }   /* 취소 글은 번쩍임 없이 자리만 맞춘다(안내 줄은 그대로) */
   .tws__fab, .tws__fab.is-on { transform: none; transition: opacity var(--t-fast); }
   .tws__fab.is-on .tws__fab-in, .tws__fab.is-on .tws__fab-in::before, .tws__fab.is-on .tws__fab-in svg { animation: none; }
   .tws__rz::after, .tws-xcover::after { transition: opacity var(--t-fast); }
