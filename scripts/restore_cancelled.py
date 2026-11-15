@@ -25,7 +25,7 @@ REPO = "sbb2002/mewtype-scheduler-data"
 
 
 def _get(path: str, ref: str) -> tuple[dict, str]:
-    out = subprocess.run(["gh", "api", f"repos/{REPO}/contents/{path}?ref={ref}"], capture_output=True, text=True, check=True)
+    out = subprocess.run(["gh", "api", f"repos/{REPO}/contents/{path}?ref={ref}"], capture_output=True, text=True, encoding="utf-8", check=True)
     meta = json.loads(out.stdout)
     return json.loads(base64.b64decode(meta["content"]).decode("utf-8")), meta["sha"]
 
@@ -76,7 +76,7 @@ def main() -> None:
     body = base64.b64encode(_ser(new).encode("utf-8")).decode("ascii")
     req = json.dumps({"message": f"data: 취소 예고 소급 표시 {aid} {now}", "content": body, "sha": sha, "branch": "data"})
     subprocess.run(["gh", "api", "-X", "PUT", f"repos/{REPO}/contents/preview.json", "--input", "-"],
-                   input=req, text=True, check=True, capture_output=True)
+                   input=req, text=True, encoding="utf-8", check=True, capture_output=True)
     print("커밋 완료")
 
 
