@@ -82,6 +82,12 @@
   html.bg-peek #pager-dots { translate: 0 calc(100% + var(--m-foot) + 12px); opacity: 0; }
   html.bg-peek #foot { translate: 0 calc(100% + 12px); opacity: 0; }
   html.bg-peek #player-frame { translate: 0 100dvh; opacity: 0; }
+  /* (11-20 검토 — 성능) 걷혀 안 보이는 동안 화면 구역 안의 CSS 애니메이션(카드 제목 흐름 · 라이브 맥동 · 읽지 않음 표시 등)을 멈춘다.
+     안 보여도 계속 돌며 매 프레임 스타일 재계산을 일으켜 돔 장면과 CPU 를 나눠 썼다. 돌아오면 이어서 돈다. 플레이어 소리는 iframe 이라 영향 없음 */
+  html.bg-peek :is(#notice, #board, #pager-dots, #foot, #player-frame),
+  html.bg-peek :is(#notice, #board, #pager-dots, #foot, #player-frame) *,
+  html.bg-peek :is(#notice, #board, #pager-dots, #foot, #player-frame) *::before,
+  html.bg-peek :is(#notice, #board, #pager-dots, #foot, #player-frame) *::after { animation-play-state: paused !important; }
 
   /* ③ 걷힌 동안 화면 전체를 덮는 투명 판 — 누르면 돌아온다. 밑의 카드 · 링크가 눌리지 않게 막는 역할도 한다 */
   #bg-peek-catch {

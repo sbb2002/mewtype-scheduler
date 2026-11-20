@@ -387,17 +387,26 @@ export function createHud({ onLock, onZoom }) {
       // (피드백 Q2-1 · Q2-2) 눈금 간격 = 눈금 사이가 3.5 단위 이상이 되는 가장 작은 간격. 큰 눈금은 5번째마다(고정)
       const ppdU = f.ppd / unit, stp = [0.1, 0.2, 0.5, 1, 2, 5, 10].find((s) => s * ppdU >= 3.5) || 10, m = 5;
       // (합집합 S13 · S16 · S17) 눈금은 선만(숫자 없음 · 0° 만 PK) · 큰 8 · 작은 4 · 채운 구간(±52 로 자름) · 부호 + 2자리 · 잔상 갱신
-      set("alt", `${f.pitchDeg.toFixed(2)}|${ppdU.toFixed(3)}`, () => {
+      // (11-20 검토 — 성능) 전엔 시선 높이가 0.01° 만 바뀌어도 눈금 선을 전부 지우고 새로 만들었다(성간 이동 흔들림 중 매 프레임 DOM 삽입 → 스타일 재계산).
+      // 이제 눈금은 기준 높이(base = 눈금 간격의 정수배) 둘레로 한 칸 넉넉히 만들어 두고, 시선 높이 변화는 묶음 이동(transform)으로만 따라간다.
+      // 간격(stp) · 배율(ppdU)이 바뀌거나 시선이 기준에서 한 칸 넘게 벗어나면 그때만 다시 만든다. 레일 밖 눈금은 부모 clip-path 가 가린다.
+      const altBase = Math.round(f.pitchDeg / stp) * stp;
+      // 배율(ppdU)은 성간 이동의 시야 넓힘(FOV) 동안 매 프레임 조금씩 바뀐다 → 2% 묶음(로그 눈금)으로만 다시 만들고, 그 사이는 세로 늘이기(scale)로 맞춘다.
+      // 가로선이라 세로로 2% 안쪽 늘여도 선 굵기 차이는 보이지 않는다
+      const ppdB = Math.exp(Math.round(Math.log(ppdU) / 0.02) * 0.02);
+      set("alt", `${altBase.toFixed(4)}|${ppdB.toFixed(4)}`, () => {
         clear(altl);
-        // (피드백 Q2-3) 그리는 범위는 레일 안(y −52 ~ 52 — 여유를 두어 ±54)만
-        for (let i = Math.floor((f.pitchDeg - 54 / ppdU) / stp); i * stp <= f.pitchDeg + 54 / ppdU; i++) {
-          const r = i * stp, yy = -(r - f.pitchDeg) * ppdU, big = ((i % m) + m) % m === 0, zero = i === 0;
+        // (피드백 Q2-3) 그리는 범위는 레일 안(y −52 ~ 52 — 여유를 두어 ±54) + 이동 · 늘이기 여유 한 칸
+        const reach = 56 / ppdB + stp;
+        for (let i = Math.floor((altBase - reach) / stp); i * stp <= altBase + reach; i++) {
+          const r = i * stp, yy = -(r - altBase) * ppdB, big = ((i % m) + m) % m === 0, zero = i === 0;
           altl.appendChild(sv("line", { x1: 14, x2: big ? 22 : 18, y1: yy.toFixed(2), y2: yy.toFixed(2), stroke: zero ? PK : CY, "stroke-width": big ? ".7" : ".4", opacity: big ? ".9" : ".5" }));
         }
-        const pr = Math.round(f.pitchDeg), ats = (pr < 0 ? "-" : "+") + String(Math.abs(pr)).padStart(2, "0") + "°";
-        altVal.textContent = ats;
-        altFill.setAttribute("y2", Math.max(-52, Math.min(52, f.pitchDeg * ppdU)).toFixed(2));   // 수평(0°) 위치 ↔ 현재(y 0)
       });
+      // 화면 y = −(r − pitch)·ppdU = (−(r − base)·ppdB)·(ppdU/ppdB) + (pitch − base)·ppdU
+      set("altShift", `${((f.pitchDeg - altBase) * ppdU).toFixed(2)} ${(ppdU / ppdB).toFixed(4)}`, (v) => { const [dy, k] = v.split(" "); altl.setAttribute("transform", `translate(0 ${dy}) scale(1 ${k})`); });
+      set("altVal", Math.round(f.pitchDeg), (pr) => { altVal.textContent = (pr < 0 ? "-" : "+") + String(Math.abs(pr)).padStart(2, "0") + "°"; });
+      set("altFill", Math.max(-52, Math.min(52, f.pitchDeg * ppdU)).toFixed(2), (y) => altFill.setAttribute("y2", y));   // 수평(0°) 위치 ↔ 현재(y 0)
       // (피드백 P1) 표시용 배율 zv — 망원(tele > 1)은 실제 배율, 물러선 구간은 1 − zoomR(×1.0 → ×0.4).
       // 물러선 구간의 숫자는 실제 광학 배율이 아니라 「얼마나 다가갔나」 지표다. 확대 버튼 · 안내 문구 판정은 아래처럼 f.tele 을 그대로 쓴다.
       const zv = f.tele > 1.001 ? f.tele : 1 - Math.max(0, Math.min(0.6, f.zoomR || 0));

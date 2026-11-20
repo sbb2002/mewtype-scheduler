@@ -1415,7 +1415,7 @@ export function createDomeGL(host, isPaused) {
     const p = new Promise((res) => {
       const img = new Image(); img.decoding = "async";
       img.onload = () => {
-        if (gl.isContextLost()) { res(false); return; }
+        if (gl.isContextLost()) { deepLoading.delete(i); res(false); return; }
         const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, tex);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); gl.generateMipmap(gl.TEXTURE_2D);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -1426,12 +1426,14 @@ export function createDomeGL(host, isPaused) {
         redrawIfResting();   // 쉬는 중이면 도착한 사진을 바로 그린다
         res(true);
       };
-      img.onerror = () => { console.warn("[bgdome] 우주 사진을 못 받음", DEEP_SET[i].name); res(false); };
+      // (11-20 검토) 실패한 Promise 를 남겨 두면 이 방문 동안 다시 받지 못한다 → 지워서 다음 시도 때 새로 받는다
+      img.onerror = () => { console.warn("[bgdome] 우주 사진을 못 받음", DEEP_SET[i].name); deepLoading.delete(i); res(false); };
       img.src = new URL("../assets/bg/space/" + DEEP_SET[i].name, import.meta.url).href;
     });
     deepLoading.set(i, p);
     return p;
   }
+  const DEEP_FAIL_MSG = "목적지 사진을 받지 못했어요 · 다시 시도해 주세요";
   function setDeep(i) { if (i < 0) { deepIdx = -1; spaceTex.deep = null; } else if (deepTex.has(i)) { deepIdx = i; spaceTex.deep = deepTex.get(i); } }
 
   // 우주 바탕의 방향(돌림 행렬, 열 우선 3×3 — uSpaceRot). (11-06 운영자 「N 이나 워프 뒤 늘 같은 풍경은 어색」)
@@ -1550,7 +1552,8 @@ export function createDomeGL(host, isPaused) {
     if (!info || picking || sky || placeKey() === key) return;
     if (star) endStar("fade");
     buzz();
-    loadDeep(info.idx).then(() => {
+    loadDeep(info.idx).then((ok) => {
+      if (!ok) { ufoPanel.toast(DEEP_FAIL_MSG); return; }   // (11-20 검토) 사진 없이 떠나면 옛 하늘에 도착 알림만 뜬다
       pendingPlace = key;
       if (!outdoor && INDOOR_BG === "space") { beginSky("space"); applyPlace(); }
       else pickSky("space");   // 전환이 시작될 때(BGINDOOR · BGVIEW) applyPlace
@@ -1681,7 +1684,12 @@ export function createDomeGL(host, isPaused) {
       star.jump = { kind: JUMP_FIXED || pickJump(), t0: performance.now() };
       sound.jump(star.jump.kind);   // 음원의 절정이 도착 순간(A 0.62초 섬광 · B 바로 · C 0.7초 충격파)에 오게(bgsound.js)
     };
-    if (idx < 0) go(); else loadDeep(idx).then(go);
+    // (11-20 검토 — 실제 재현) 사진을 못 받았는데 출발하면 기본 우주(또는 이전 사진) 그대로인 채 「OO 도착」 알림이 떴다 → 출발하지 않고 알린다. 다시 누르면 새로 받는다
+    if (idx < 0) go();
+    else loadDeep(idx).then((ok) => {
+      if (ok) { go(); return; }
+      if (star && star.dest === dest && !star.jump) { star.dest = null; star.nextDeep = -1; ufoPanel.toast(DEEP_FAIL_MSG); }
+    });
   }
   const warpDir = () => (star && star.dir) || WARP_DIR0;   // 지금 여행의 진행 방향(없으면 옛 정면 지평선)
   // 흔들기(11-06 운영자): 좌석벨트 표시등이 켜져 있으면(레드존 가속 · 급제동) 두 패널이 빠르게 흔들리고(세기 = 모형의 떨림 amp 비례), 깜빡일 땐 아주 약하게.
@@ -1712,15 +1720,14 @@ export function createDomeGL(host, isPaused) {
     alarmK += (want - alarmK) * (1 - Math.exp(-dt / 0.25));
     if (alarmK < 0.002 && !want) alarmK = 0;
     const peekNow = document.documentElement.classList.contains("bg-peek");
-    siren.hidden = !(alarmK > 0 && peekNow);
+    const sirenOff = !(alarmK > 0 && peekNow);
+    if (siren.hidden !== sirenOff) siren.hidden = sirenOff;   // (11-20 검토) 같은 값도 매 프레임 다시 쓰면 속성 변경 → 스타일 재계산이 일어난다
     sound.alarm(alarmK);   // 경보음도 같은 세기로(bgsound.js) — 배경 보기가 아니어도 성간 이동 중이면 들린다
     if (!siren.hidden) siren.style.opacity = alarmK.toFixed(3);
   }
   // (bg-dome, 11-10) 라이브 조명 — 멤버가 라이브면 그 바닥 조명만 멤버 색으로 맥동(bglive.js 의 값). 경보 빨강이 우선: alarmK 만큼 라이브 색을 뺀다.
   //   점멸 = high 등급 또는 배경 보기 중. 낮은 등급 + 예고보드 = 점멸 없이 멤버 색으로 켜 두기(다시 그리는 건 상태가 바뀔 때만).
   let liveDirty = true, liveDrawAt = -Infinity;
-  // (11-13 운영자 「테스트로 모든 조명의 색을 적용」) 확인용 ?bglive=all — 실제 데이터와 상관없이 다섯 조명을 모두 방송 중으로 켠다(병합 전 정리 대상)
-  if (QS.get("bglive") === "all") forceLive(FALLBACK_CHANNEL_ORDER);
   const liveCol = new Float32Array(15), liveK = new Float32Array(5), liveA = new Float32Array(5);
   const liveAnimating = (peek) => !reducedMotion.matches && (!isLow() || peek) && (lastLive() || []).some((s) => s && s.live);
   function liveUniforms() {
@@ -1880,9 +1887,11 @@ export function createDomeGL(host, isPaused) {
     zblurOn = true; zblur.style.opacity = "1";
     zg.clearRect(0, 0, zblur.width, zblur.height);
     const mx = cx * dpr, my = cy * dpr;
-    for (let i = 1; i <= 6; i++) {
-      const sc = 1 + i * 0.075 * blurK;
-      zg.save(); zg.globalAlpha = Math.min(0.5, (0.46 * blurK) / Math.sqrt(i));
+    // (11-20 검토) 낮은 등급은 겹침 3번(간격 2배) — 같은 번짐 폭을 절반 비용으로
+    const n = isLow() ? 3 : 6, stepK = 6 / n;
+    for (let i = 1; i <= n; i++) {
+      const sc = 1 + i * stepK * 0.075 * blurK;
+      zg.save(); zg.globalAlpha = Math.min(0.5, (0.46 * blurK) / Math.sqrt(i * stepK));
       zg.translate(mx, my); zg.scale(sc, sc); zg.translate(-mx, -my);
       zg.drawImage(canvas, 0, 0);
       zg.restore();
@@ -2670,6 +2679,8 @@ export function createDomeGL(host, isPaused) {
     if (t - lastFrame < frameGap(peek) - 2) { raf = requestAnimationFrame(frame); return; }
     lastFrame = t;
     const dt = Math.min(0.05, (t - tPrev) / 1000 || 0.016);
+    // (11-20 검토) 시선 HUD(2초 바라보기)는 실제 경과 시간으로 — 물리용 dt(0.05 상한)를 쓰면 프레임이 떨어질수록 잡기가 느려졌다(SwiftShader 실측 4.8초에 20%)
+    const hudDt = Math.min(0.25, (t - tPrev) / 1000 || 0.016);
     tPrev = t;
     updateView(dt, t);
     const moving = stepPieces(pieces, dt, tiltAccel(dt));
@@ -2677,7 +2688,7 @@ export function createDomeGL(host, isPaused) {
     updateUfo(peek);
     updateStar(performance.now(), dt, peek);
     updateWarpFx(dt);
-    updateHud(peek, dt);
+    updateHud(peek, hudDt);
     updateStarlight(peek);
     updateAlarm(dt);
     // 지형 질감을 올리는 동안은 그리기를 쉬어(draw 첫 줄) 화면이 멈춘다 — 그동안 하늘 전환 시계도 멈춰, 반쯤 섞인 화면에서 끝나 버리지 않게(처음 지구를 고를 때)
