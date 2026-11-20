@@ -142,6 +142,13 @@
   border: 1px solid transparent;   /* 테두리 · 글로우는 .ufo-frame(SVG)이 그린다 — 카드의 clip-path 가 box-shadow 를 잘라 버려서 */
   clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
 }
+/* (11-20 검토 — 실측 재현) 조작 패널은 칸이 다 열리면 약 542px — 화면 높이가 그보다 낮으면(작은 폰 · 가로 화면) 위아래가 잘렸다(360×500 에서 22px씩, 320×460 에서 88px씩).
+   화면 높이에 맞춰 줄이고 넘치는 만큼은 패널 안에서 스크롤한다. 테두리 SVG 는 카드 크기를 따라 다시 그린다(ResizeObserver) */
+.ufo-hud .ufo-card {
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+}
+.ufo-hud .ufo-card::-webkit-scrollbar { display: none; }
 /* 홀로그램 테두리(조작 · 기어 패널 공용, js holoParts) — 시안 선 + 바깥으로 번지는 푸른 글로우, 은은하게 숨 쉰다. 레드존이면 빨강 */
 .ufo-frame { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; filter: drop-shadow(0 0 2px rgba(79, 227, 255, .95)) drop-shadow(0 0 8px rgba(79, 227, 255, .6)) drop-shadow(0 0 20px rgba(79, 227, 255, .35)); animation: ufo-frame-breathe 3.2s ease-in-out infinite; transition: filter .3s; }
 .ufo-frame__line { fill: none; stroke: rgba(160, 242, 255, .9); stroke-width: 1.2; transition: stroke .3s; }

@@ -2565,7 +2565,8 @@ export function createDomeGL(host, isPaused) {
     if (!sky) panelResume = false;
     // 「두 손가락으로 벌려…」 안내(운영자 11-09) — 이 기기에서 최초 1회만, 보이는 동안 10초 뒤(또는 실제로 벌려 본 뒤) 테마의 도트 + 흰 선으로 사라진다
     const hnow = performance.now(), hdt = hintLastT ? Math.min(100, hnow - hintLastT) : 0; hintLastT = hnow;
-    const hintA = peek && !hud.cardOn ? Math.max(0, Math.min(1, 1 - 2.5 * (1 - zoomR / PEEK_START_R))) : 0;   // 시선 HUD 카드가 뜬 동안은 숨김(겹침)
+    ufoPanel.setGear(gear.shown);   // (11-20 검토) 기어 패널과 겹치는 화면 아래 신호 · 안내는 기어가 떠 있는 동안 숨긴다
+    const hintA = peek && !hud.cardOn && !gear.shown ? Math.max(0, Math.min(1, 1 - 2.5 * (1 - zoomR / PEEK_START_R))) : 0;   // 시선 HUD 카드 · 기어 패널이 뜬 동안은 숨김(겹침 — 숨은 동안은 10초 수명도 세지 않는다)
     if (unlockS.seen.pinchHint) ufoPanel.setHint(0);
     else if (!hintDissolving) {
       if (hintA > 0.3) pinchHintMs += hdt;

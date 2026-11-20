@@ -191,7 +191,9 @@ export function createUfoPanel() {
   ], { "aria-hidden": "true" });
   document.body.appendChild(call);
   const markEl = (key) => (key === "light" ? lightBtn : tiles[key]);
-  const syncCall = () => call.classList.toggle("is-on", marks.size > 0 && !on);
+  // (11-20 검토 — 실측 재현) 기어 패널이 떠 있으면 신호를 끈다 — 둘 다 화면 아래 가운데라 신호가 기어 패널 뒤에 완전히 가려졌다
+  let gearOn = false;
+  const syncCall = () => call.classList.toggle("is-on", marks.size > 0 && !on && !gearOn);
   function clearMark(key) {
     if (!marks.delete(key)) return;
     markEl(key)?.classList.remove("is-fresh");
@@ -332,6 +334,8 @@ export function createUfoPanel() {
       if (matchMedia("(prefers-reduced-motion: reduce)").matches) fin(); else dissolve(hint, hintLine, fin);
     },
     /** 안내 불투명도 0 ~ 1(0.02 이상 바뀔 때만 DOM 을 건드린다) */
+    /** 기어 패널(bggear.js)이 보이는지 — 보이는 동안 「벌려 다가가기」 신호를 끈다 */
+    setGear(v) { v = !!v; if (v === gearOn) return; gearOn = v; syncCall(); },
     setHint(a) {
       if (hintGone) return;
       if (Math.abs(a - hintA) < 0.02 && !(a === 0 && hintA !== 0)) return;
