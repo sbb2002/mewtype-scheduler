@@ -25,7 +25,7 @@ export function dopplerTint(D) {
 }
 
 /** parent = 돔 공중 무늬 층(bgdm-air) — 바닥 콘솔보다 뒤에 놓여 UFO · 별자리가 바닥을 뚫지 않는다(bgdeco.css). 없으면 body 에 붙인다. */
-export function createFx(parent = document.body) {
+export function createFx(parent = document.body, onFirstYmmt) {
   const cv = document.createElement("canvas");
   cv.className = "bgfx"; cv.setAttribute("aria-hidden", "true");
   const g = cv.getContext("2d");
@@ -34,6 +34,7 @@ export function createFx(parent = document.body) {
   const tint = document.createElement("canvas"); tint.width = tint.height = 96;   // 색을 입힌 UFO 한 장(매 프레임 다시 칠함)
   const tg = tint.getContext("2d");
   let W = 0, H = 0, dpr = 1, shown = false;
+  let firstYmmt = false;
   let ymmt = null, ufo = null, nextY = 0, nextU = 0, lastPlace = null, shape = null;
   const t0 = () => performance.now() / 1000;
 
@@ -130,6 +131,7 @@ export function createFx(parent = document.body) {
   }
 
   return {
+    queueYmmt() { firstYmmt = true; },
     remove() { cv.remove(); },
     /**
      * 한 프레임. f = { active(보이기), place("earth" · "space" · 딥필드 키 …), ymmtOn(YMMT 해금), project(dir → [x, y] | null), ppd(화면 px / 도), yawDeg, beta(성간 이동 속도, 없으면 0), reduced }
@@ -143,9 +145,9 @@ export function createFx(parent = document.body) {
       if (f.place !== lastPlace) { lastPlace = f.place; ymmt = null; nextY = now + rnd(8, 16); if (!nextU || nextU < now) nextU = now + rnd(10, 22); }
       g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
       // 스폰
-      if (f.place === "earth" && f.ymmtOn && !ymmt && now >= nextY) {
+      if (f.place === "earth" && f.ymmtOn && !ymmt && (firstYmmt || now >= nextY)) {
         shape = shape || ymmtLetters(7);
-        ymmt = { t0: now, dir: dirFromAzAlt(f.yawDeg + rnd(-28, 28), rnd(32, 52)) };
+        ymmt = { t0: now, first: firstYmmt, dir: firstYmmt ? dirFromAzAlt(f.yawDeg, f.pitchDeg) : dirFromAzAlt(f.yawDeg + rnd(-28, 28), rnd(32, 52)) };
         nextY = now + 9 + rnd(35, 80);
       }
       if (!ufo && now >= nextU) { startUfo({ beta: f.beta || 0 }); nextU = now + (f.beta > 0.05 ? rnd(10, 22) : rnd(28, 70)); }
@@ -154,7 +156,13 @@ export function createFx(parent = document.body) {
         if (age > 9) ymmt = null;
         else {
           const p = f.project(ymmt.dir);
-          if (p) drawYmmt(p, (18 * Math.max(4, f.ppd || 8)) / 345, age);   // 가로 약 18°(작게)
+          if (p) {
+            drawYmmt(p, (18 * Math.max(4, f.ppd || 8)) / 345, age);
+            if (firstYmmt && ymmt.first && age >= 5 && p[0] >= 0 && p[0] <= W && p[1] >= 0 && p[1] <= H) {
+              firstYmmt = false;
+              onFirstYmmt?.();
+            }
+          }   // 가로 약 18°(작게)
         }
       }
       if (ufo) drawUfo(now);

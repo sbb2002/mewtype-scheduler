@@ -18,12 +18,13 @@ const MAX_SLOPE = 0.7;    // |dx| / dy 이 값보다 크면 가로 넘기기로 
 const RETURN_MS = 620;    // 돌아오는 움직임(css --bgp-in 520ms + 레인 지연 50ms)이 끝날 때까지 누름 막이를 유지
 
 let catcher = null;
+let back = null;
 let peeking = false;
 let unlockT = 0;
 let touch = null;
 
 // 첫 방문 안내(운영자 11-10) — 위로 미는 손 모양 + 「위로 밀어 배경 보기」. 이 기기에서 처음 한 번만:
-// 위로 튕겨 배경을 열면 바로 사라지고, 안내가 떠 있은 지 15초가 지나도 사라지며 다시 뜨지 않는다.
+// 15초 뒤 접고, 배경 보기를 실제로 연 뒤에만 자동 안내를 끝낸다.
 const CUE_KEY = "bgpeek-hold-flick-cue";
 const CUE_SHOW_MS = 1200;   // 페이지가 자리 잡은 뒤 뜬다
 const CUE_LIFE_MS = 15000;
@@ -37,13 +38,28 @@ function cueSeen() {
 function dismissCue() {
   if (!cue || cue.hidden) return;
   clearTimeout(cueT);
-  try { localStorage.setItem(CUE_KEY, "1"); } catch { /* 저장 불가 */ }
   cue.classList.remove("is-on");
   setTimeout(() => { if (!cue.classList.contains("is-on")) cue.hidden = true; }, 400);
 }
 
-function showCue() {
-  if (!canPeek() || !cue || cueSeen() || !PHONE.matches || peeking) return;
+function showCue(replay = false) {
+  if (!canPeek() || !cue || (!replay && cueSeen()) || !PHONE.matches || peeking) return;
+  if (!replay && document.querySelector(".ntc__theme.is-hint, .lc-tip")) { cueT = setTimeout(showCue, 800); return; }
+  const lane = document.querySelector(".lane--active");
+  if (lane && !lane.inert) {
+    const rect = lane.getBoundingClientRect();
+    const minX = Math.max(28, rect.left + 3), maxX = Math.min(innerWidth - 28, rect.right - 3);
+    const minY = Math.max(122, rect.top + 32), maxY = Math.min(innerHeight - 64, rect.bottom - 5);
+    let point = null;
+    for (let y = maxY; y >= minY && !point; y -= 12) {
+      for (const x of [(minX + maxX) / 2, minX, maxX]) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit?.closest(".lane--active") === lane && !hit.closest(CONTENT)) { point = { x, y }; break; }
+      }
+    }
+    cue.style.left = point ? point.x + "px" : "";
+    cue.style.bottom = point ? innerHeight - point.y - 17 + "px" : "";
+  }
   cue.hidden = false;
   requestAnimationFrame(() => cue.classList.add("is-on"));
   cueT = setTimeout(dismissCue, CUE_LIFE_MS);
@@ -63,7 +79,8 @@ function setInert(on) {
 function hide() {
   if (!canPeek() || peeking || !PHONE.matches) return;
   if (root.hasAttribute("data-bday-full")) return;   // 생일 「온전히 보기」 중이면 이미 배경만 보인다
-  dismissCue();   // 한 번 해 보면 안내는 끝
+  dismissCue();
+  try { localStorage.setItem(CUE_KEY, "1"); } catch { /* 저장 불가 */ }
   peeking = true;
   clearTimeout(unlockT);
   document.activeElement?.blur?.();
@@ -71,6 +88,11 @@ function hide() {
   document.dispatchEvent(new Event("bgpeek:enter"));   // (11-20) 같은 손길(touchend) 안에서 동기로 — 돔이 소리(Web Audio)를 깨운다(bgdomegl.js)
   setInert(true);
   catcher.hidden = false;
+  const dome = bgTheme() === "dome";
+  catcher.tabIndex = dome ? -1 : 0;
+  if (dome) catcher.setAttribute("aria-hidden", "true");
+  else catcher.removeAttribute("aria-hidden");
+  back.hidden = !dome;
   if (navigator.vibrate && !REDUCE.matches) try { navigator.vibrate(8); } catch { /* 진동 미지원 */ }
 }
 
@@ -78,6 +100,7 @@ function show() {
   if (!peeking) return;
   if (root.dataset.bgPinch) return;   // 두 손가락 줌(bgdomegl.js) 중 · 직후의 click 은 되돌리기가 아니다
   peeking = false;
+  back.hidden = true;
   root.classList.remove("bg-peek");
   setInert(false);
   // 돌아오는 동안에도 누름 막이를 남겨 둔다 — 움직이는 카드가 엉겁결에 눌리지 않게
@@ -172,9 +195,17 @@ export function initBgPeek() {
   // 조작 패널(UFO)이 떠 있으면 바깥 누름은 패널만 닫는다 — 예고 화면으로 되돌리지 않는다(1동작 1액션, bgdomegl.js 가 받는다)
   catcher.addEventListener("click", () => {
     if (root.hasAttribute("data-bg-panel")) { document.dispatchEvent(new Event("bgpanel-dismiss")); return; }
-    show();
+    if (bgTheme() !== "dome") show();
   });
-  document.body.appendChild(catcher);
+  back = document.createElement("button");
+  back.type = "button";
+  back.className = "bgp-exit";
+  back.textContent = "‹ 예고보드";
+  back.hidden = true;
+  back.addEventListener("click", show);
+  document.body.append(catcher, back);
+  document.addEventListener("bgpeek:open", hide);
+  document.addEventListener("bgpeek:cue", () => { clearTimeout(cueT); showCue(true); });
 
   // 첫 방문 안내 — 손 모양은 장식이라 읽기 전용 · 터치 통과(pointer-events: none). 글자 · 손 모양 모두 정적 문자열
   cue = document.createElement("div");
@@ -182,9 +213,15 @@ export function initBgPeek() {
   cue.hidden = true;
   cue.setAttribute("aria-hidden", "true");
   // (bg-dome 시나리오, 11-13 「텍스트 설명 최소화」) 글 없이 손짓만 — 손끝(점)이 꾹 눌려 둘레가 차오른 뒤(길게 누르기) 위로 미끄러지고, 꺾쇠 셋이 위로 흐른다
-  cue.innerHTML = `<div class="bgp-cue__hand"><i></i><i></i><i></i></div><div class="bgp-cue__finger"><b></b></div>`;   // 고정 문자열(데이터 아님)
+  const hand = document.createElement("div");
+  hand.className = "bgp-cue__hand";
+  hand.append(...Array.from({ length: 3 }, () => document.createElement("i")));
+  const finger = document.createElement("div");
+  finger.className = "bgp-cue__finger";
+  finger.append(document.createElement("b"));
+  cue.append(hand, finger);
   document.body.appendChild(cue);
-  if (PHONE.matches && !cueSeen()) setTimeout(showCue, CUE_SHOW_MS);
+  if (PHONE.matches && !cueSeen()) cueT = setTimeout(showCue, CUE_SHOW_MS);
 
   const syncTheme = () => {
     cancelTouch();

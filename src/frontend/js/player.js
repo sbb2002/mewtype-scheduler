@@ -16,7 +16,7 @@
 // 데이터는 textContent / createElement 로만 주입한다(XSS 방어, innerHTML 금지).
 
 import { fetchPreview } from "./api.js";
-import { setMainMusicActive, setMainMusicHandOff, notePlayerState } from './musicpriority.js';
+import { setMainMusicActive, setMainMusicHandOff, notePlayerState, mainMusicActive } from './musicpriority.js';
 import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS, FALLBACK_CHANNEL_ORDER } from "./config.js";
 import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange, kstDate, omakaseOrder, mediaCandidates, hasMv } from "./songs.js";
 import { wireSheetDrag } from "./sheetdrag.js";   // (마이크로 인터랙션) 모바일 시트 끌어 내리기
@@ -1648,6 +1648,16 @@ function finishClose() {
   st.closing = false;
   el.scrim.hidden = true;
   layoutFrame();
+}
+
+/** 돔 추천 곡. 이미 듣는 곡이 있으면 그대로 둔다. */
+export async function playRecommendedSong(id) {
+  if (mainMusicActive() || (!ytReady && wantPlay)) return false;
+  build();
+  await loadSongs();
+  if (mainMusicActive() || (!ytReady && wantPlay) || !st.songs.some((song) => song.id === id)) return false;
+  selectSong(id, true);
+  return true;
 }
 
 export async function openPlayer() {

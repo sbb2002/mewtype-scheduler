@@ -531,3 +531,11 @@ html[data-bg-panel] .ufo-call { opacity: 0; visibility: hidden; }
 html.bg-peek .bg-music-rim.is-on { opacity: 1; visibility: visible; transition: opacity 1.2s ease; animation: bg-rim-breathe 7s ease-in-out infinite; }
 @keyframes bg-rim-breathe { 0%, 100% { opacity: .7; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { html.bg-peek .bg-music-rim.is-on { animation: none; opacity: .85; } }
+
+.ufo-gear[data-warp-phase="accelerating"] .ugr-chip,
+.ufo-gear[data-warp-phase="preparing"] .ugr-chip,
+.ufo-gear[data-warp-phase="loading"] .ugr-chip { color: #ffd68e; }
+.ufo-gear[data-warp-phase="ready"] .ugr-chip { color: #9ffff0; }
+.ufo-gear[data-warp-phase="ready"] .ugr-warp { border-color: #9ffff0; color: #d9fffa; }
+.ugc-signal { color: #a8fff2; border-color: currentColor; }
+.bghud-hn:empty { display: none; }

@@ -367,3 +367,10 @@ body:has(.ntc__theme.is-hint) .bgvw-hold-hint { visibility: visible; opacity: 1;
 @media (prefers-reduced-motion: reduce) {
   .bgvw-hold-hint { transition: none; }
 }
+
+.bgvw-peek-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px 8px; }
+.bgvw-peek-actions[hidden] { display: none; }
+.bgvw-peek-actions button {
+  color: var(--color-text); background: var(--color-bg); border: 1px solid var(--color-border);
+  border-radius: 9px; padding: 5px 9px; min-height: 36px; font: inherit; font-size: 12px; cursor: pointer;
+}

@@ -122,6 +122,7 @@
   }
   #bg-peek-cue[hidden] { display: none; }
   #bg-peek-cue.is-on { opacity: 1; }
+  body:has(.bgvw.is-open) #bg-peek-cue { visibility: hidden; }
   #bg-peek-cue .bgp-cue__hand { position: relative; width: 56px; height: 56px; }
   #bg-peek-cue .bgp-cue__hand i {
     position: absolute;
@@ -192,3 +193,13 @@
   #bg-peek-cue .bgp-cue__finger b { --bgp-fill: 100%; }
   #board .lane.bgp-armed { translate: none; scale: none; }
 }
+
+.bgp-exit, .bg-music-recommend {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); z-index: 974;
+  min-height: 36px; border: 1px solid #8ac0dc80; border-radius: 18px;
+  color: #eaf7ff; background: #101829eb; padding: 4px 10px;
+  font: 600 11px system-ui, sans-serif; cursor: pointer;
+}
+.bgp-exit { left: 10px; }
+.bg-music-recommend { right: 10px; max-width: 52vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bgp-exit[hidden], .bg-music-recommend[hidden] { display: none; }

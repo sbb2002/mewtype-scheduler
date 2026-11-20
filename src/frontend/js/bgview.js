@@ -114,7 +114,7 @@ function tryHint() {
   hintTimer = 0;
   const html = document.documentElement;
   const blocked = hintDone() || !hintBtn.isConnected || hintBtn.offsetWidth === 0 || document.hidden
-    || html.classList.contains("bg-peek") || html.hasAttribute("data-bday-full") || (pop && !pop.hidden);
+    || html.classList.contains("bg-peek") || document.querySelector("#bg-peek-cue.is-on, .lc-tip") || html.hasAttribute("data-bday-full") || (pop && !pop.hidden);
   if (blocked) {
     if (++hintTries < HINT_MAX_TRY) hintTimer = setTimeout(tryHint, HINT_RETRY_MS);
     return;
@@ -127,6 +127,7 @@ function tryHint() {
   hintTimer = setTimeout(() => { hintBtn.classList.remove("is-hint"); hintTimer = 0; }, HINT_MS);
 }
 
+let peekActions = null;
 let pop = null, press = null, eatClick = false, toastEl = null, toastT = 0, busy = false;
 let gyroMod = null;   // bggyro.js — 돔 테마에서 팝업을 열 때만 불러온다(syncPop)
 
@@ -177,14 +178,16 @@ async function choose(value) {
   busy = false;
   if (result === "ok") {
     setBgView("outdoor");   // 위치를 받은 뒤에 바꾼다 — 배경 보기 중이면 돔이 「재투영」 전환을 한다(bgdomegl.js beginSky)
-    toast("바깥 보기 — 폰을 세워 하늘을 비추면 실제 자리에 해 · 달이 보여요. 레인을 위로 튕겨 걷으면 가리는 것 없이 볼 수 있어요.", 6500);
+    toast(document.documentElement.classList.contains("bg-peek")
+      ? "폰을 들어 실제 자리에 뜬 해 · 달을 찾아보세요."
+      : "폰을 들어 하늘을 보거나, 배경 보기로 레인을 걷어 보세요.", 4800);
     return;
   }
   setBgView("indoor");
   if (result === "denied") {
     toast(before === "denied"
       ? "바깥 보기는 위치 권한이 있어야 쓸 수 있어요. 브라우저 설정의 사이트 권한에서 위치를 허용해 주세요."
-      : "바깥 보기는 위치 권한을 허용해야 쓸 수 있어요. 실내 보기로 돌아갑니다.", 6000);
+      : "위치 권한을 허용한 뒤 지구 타일을 다시 눌러 주세요.", 6000);
   } else if (result === "unsupported") {
     toast("이 브라우저는 위치를 알려 주지 않아 바깥 보기를 쓸 수 없어요.", 5000);
   } else {
@@ -222,6 +225,7 @@ function syncPop() {
   // 방향 안내(UFO 테마일 때만) — 진북 보정(편각)은 자동이라 얼마나 더하고 있는지만 덧붙인다
   const note = pop.querySelector(".bgvw__note");
   note.hidden = cur !== "dome";
+  peekActions.hidden = cur !== "dome" || !window.matchMedia("(max-width: 767px)").matches;
   // 진북 보정 값은 둘러보기 모듈(bggyro.js)에 있다 — 돔 테마일 때만 불러온다(기본 테마는 안 받는다)
   if (cur === "dome" && !gyroMod) {
     import("./bggyro.js").then((m) => { gyroMod = m; syncPop(); }, () => {});
@@ -274,6 +278,16 @@ function buildPop() {
   const note = document.createElement("p");
   note.className = "bgvw__note";
   pop.appendChild(note);
+  peekActions = document.createElement("div");
+  peekActions.className = "bgvw-peek-actions";
+  for (const [label, event] of [["배경 보기", "bgpeek:open"], ["손짓 다시 보기", "bgpeek:cue"]]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", () => { close(); document.dispatchEvent(new Event(event)); });
+    peekActions.append(button);
+  }
+  pop.append(peekActions);
   document.body.appendChild(pop);
 }
 

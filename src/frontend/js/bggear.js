@@ -83,7 +83,7 @@ export function dissolve(root, line, done) {
 export function createGearPanel({ onGear, onWarp }) {
   const belt = beltSign();
   const read = h("span", "ufo-mono ugr-read", ["0.00c"]);
-  const chip = h("span", "ufo-mono ugr-chip", ["IDLE"]);
+  const chip = h("span", "ufo-mono ugr-chip", ["IDLE"], { role: "status" });
   const warp = h("button", "ufo-mono ugr-warp", ["WARP"], { type: "button", disabled: "" });
   warp.addEventListener("click", () => { if (!warp.disabled) onWarp(); });
   const top = h("div", "ugr-top", [belt, read, chip, h("span", "ugr-sp"), warp]);
@@ -134,7 +134,7 @@ export function createGearPanel({ onGear, onWarp }) {
     /** 워프 목적지 고르기 창 — items = bgunlock.chooserItems 결과, onPick(key) = 고름(창은 닫힌다). 지금 있는 곳(here)은 누를 수 없다 */
     openChooser(items, onPick) {
       chList.replaceChildren(...items.map((it) => {
-        const b = h("button", "ugc-item" + (it.here ? " is-here" : ""), [h("span", "ugc-name", [it.name]), ...(it.here ? [h("span", "ufo-chip", ["지금 여기"])] : [])], { type: "button" });
+        const b = h("button", "ugc-item" + (it.here ? " is-here" : ""), [h("span", "ugc-name", [it.name]), ...(it.here ? [h("span", "ufo-chip", ["지금 여기"])] : it.signal ? [h("span", "ufo-chip ugc-signal", ["새 신호"])] : [])], { type: "button" });
         if (it.here) b.disabled = true;
         b.addEventListener("click", () => { const fn = chPick; closeChooser(); if (fn) fn(it.key); });
         return b;
@@ -165,7 +165,7 @@ export function createGearPanel({ onGear, onWarp }) {
     /** 흔들기(px) — 좌석벨트 표시등이 켜지면 빠르고 세게, 깜빡일 땐 약하게(bgdomegl.js 가 매 프레임) */
     shake(dx, dy) { if (!leaving) root.style.transform = dx || dy ? `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)` : ""; },
     /** 모형 상태를 그린다(바뀐 것만 DOM 을 건드린다). jumping = 워프 점프 연출 중(조작 잠금, 표시 「JUMP」) */
-    update(st, jumping, jumpBeta) {
+    update(st, jumping, jumpBeta, loading = false) {
       locked = jumping;
       const beta = jumping ? jumpBeta : st.beta, red = jumping ? beta >= 0.85 : isRed(st), moving = st.mode !== "idle";
       set("red", red, (v) => root.classList.toggle("is-red", v));
@@ -174,13 +174,17 @@ export function createGearPanel({ onGear, onWarp }) {
       set("gear", st.gear, (v) => { thumb.style.left = v * 20 + "%"; thumb.textContent = v ? String(v) : "N"; track.setAttribute("aria-valuenow", String(v)); });
       const gl = (k) => (k === 0 ? "N" : String(k));
       const ST = { go: "ACCEL", accel: "ACCEL", decel: "DECEL", redAccel: "REDLINE", redDecel: "BRAKE!", idle: st.gear === 0 ? "IDLE" : red ? "CRUISE·RED" : "CRUISE" };
-      const text = jumping ? "JUMP" : moving && st.stage !== st.gear ? `${ST[st.mode]} ${gl(st.stage)}›${gl(st.gear)}` : ST[st.mode];
+      const ready = !jumping && !loading && warpReady(st);
+      const phase = loading ? "loading" : ready ? "ready" : st.gear === 5 && st.beta >= 0.98 ? "preparing" : st.gear === 5 ? "accelerating" : "";
+      const phaseText = { loading: "목적지 준비", ready: "출발 가능", preparing: "워프 준비", accelerating: "가속 중" };
+      const text = jumping ? "JUMP" : phaseText[phase] || (moving && st.stage !== st.gear ? `${ST[st.mode]} ${gl(st.stage)}›${gl(st.gear)}` : ST[st.mode]);
       set("chip", text, (v) => { chip.textContent = v; });
       set("chipTone", jumping || red || st.mode.startsWith("red") ? "red" : st.mode === "idle" ? "idle" : "go", (v) => { chip.dataset.tone = v; });
       set("tgt", moving && st.stage !== st.gear, (v) => thumb.classList.toggle("is-tgt", v));
       set("lock", jumping, (v) => track.classList.toggle("is-locked", v));
       set("belt", st.belt, (v) => { belt.dataset.state = v; belt.setAttribute("aria-label", v === "off" ? "좌석벨트 표시등 꺼짐" : "좌석벨트를 매 주세요"); });
-      set("warp", !jumping && warpReady(st), (v) => { warp.disabled = !v; });
+      set("phase", jumping ? "" : phase, (v) => { root.dataset.warpPhase = v; });
+      set("warp", ready, (v) => { warp.disabled = !v; });
     },
   };
 }

@@ -134,7 +134,7 @@ export function createUfoPanel() {
     list.append(b);
   });
   // 지구를 고를 때 위치 권한을 묻는다는 안내(시안 Main.dc.html — 지구 칸 아래)
-  const earthNote = h("p", "ufo-note", ["위치 권한을 물어요 — 거절하면 지금 배경에 남아요."]);
+  const earthNote = h("p", "ufo-note", ["이곳의 해 · 달 위치를 맞추는 데 위치 권한을 써요."]);
   list.append(earthNote);
   // (11-09 해금 3단계) 보상 칸 — 별빛 조명 켜고 끄기(멤버 별자리 5개) · 자유 항해(지구까지 연 뒤 — 가 본 딥필드 · 달 궤도로 바로)
   const lightBtn = h("button", "ufo-mono ufo-extra-btn", ["별빛 조명 끄기"], { type: "button", "aria-pressed": "true" });
@@ -303,7 +303,7 @@ export function createUfoPanel() {
       syncCall();
     },
     /** (시나리오) 찾은 대상의 모양이 화면 가운데에서 아래(바닥 콘솔 쪽)로 날아가 사라진다. key = 아이콘("space" 토성 · "earth" 지구 · 그 밖 = 빛 점) */
-    fly(key) {
+    fly(key, onLand) {
       if (reduce()) return;
       const ico = h("div", "ufo-fly", [ICONS[key] ? ICONS[key]() : h("i")], { "aria-hidden": "true" });
       document.body.appendChild(ico);
@@ -311,15 +311,17 @@ export function createUfoPanel() {
       const a = ico.animate([
         { transform: "translate(-50%, -50%) scale(1.8)", opacity: 0 },
         { transform: "translate(-50%, -50%) scale(1.5)", opacity: 1, offset: 0.25 },
-        { transform: `translate(-50%, calc(-50% + ${dy}px)) scale(.5)`, opacity: 0 },
+        { transform: `translate(-50%, calc(-50% + ${dy}px)) scale(.5)`, opacity: 1, offset: .82 },
+        { transform: `translate(-50%, calc(-50% + ${dy}px)) scale(1.65)`, opacity: 0 },
       ], { duration: 1300, easing: "cubic-bezier(.5,0,.6,1)" });
-      a.onfinish = a.oncancel = () => ico.remove();
+      a.onfinish = () => { ico.remove(); onLand?.(); };
+      a.oncancel = () => ico.remove();
     },
     /** (해금) 화면 위쪽에 잠깐 뜨는 한 줄 알림(해금 · 도착). 2.2초, 새 알림이 오면 바꿔 쓴다 */
-    toast(text) {
+    toast(text, ms = 2200) {
       toastEl.textContent = text;
       toastEl.classList.remove("is-on"); void toastEl.offsetWidth; toastEl.classList.add("is-on");
-      clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove("is-on"), 2200);
+      clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove("is-on"), ms);
     },
     /** (11-09) 해금 안내 카드 — g = { title, how }. ms 뒤 저절로 닫힘(기본 10초) */
     guide(g, ms = 10000) {

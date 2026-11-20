@@ -10,7 +10,7 @@ const FILL_AT = 150;    // 짧은 탭에 번쩍이지 않게 이만큼 지나서
 const MOVE_PX = 8;      // 이만큼 움직이면 스크롤 · 끌기로 보고 취소
 const TOAST_MS = 1600;
 const TIP_MS = 6000;    // 말풍선이 떠 있는 시간
-const TIP_DELAY_MS = 900;   // 첫 그리기가 자리 잡은 뒤에 띄운다
+const TIP_DELAY_MS = 2050;   // 첫 그리기가 자리 잡은 뒤에 띄운다
 const TIP_KEY = "mew.tip.long-copy";   // 말풍선을 본 적 있음 — 사이트 기록 초기화 전까지 다시 안 띄운다. 저장소를 못 쓰면 이 페이지를 연 동안 한 번만
 const NS = "http://www.w3.org/2000/svg";
 // 알림이 덮지 않게 피하는 자리 — 제목 · 시각 · 링 · 배지 · 자물쇠 · 호버 팝업
@@ -249,6 +249,10 @@ function followTip() {
 }
 function showTip() {
   if (tipSeen() || tipEl || press || document.hidden) return;
+  if (document.querySelector("html.bg-peek, .bgvw.is-open, #bg-peek-cue.is-on, .ntc__theme.is-hint")) {
+    tipT = setTimeout(showTip, 800);
+    return;
+  }
   const pick = pickTipTarget(tipCandidates(), FALLBACK_CHANNEL_ORDER);
   if (!pick) return;   // 지금 보이는 카드가 없으면 다음 그리기 · 스크롤 때 다시
   markTipSeen();

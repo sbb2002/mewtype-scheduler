@@ -243,6 +243,7 @@ export function createHud({ onLock, onZoom }) {
     remove() { root.remove(); },
     /** 정보 카드가 떠 있나(조작 패널의 「다가가 보세요」 안내를 그동안 숨긴다) */
     get cardOn() { return !!cardFor; },
+    get zodiacCard() { return !!cardFor?.zod; },
     /** 확인용(?bgdebug) — 잡기 상태 */
     get debug() { return { focus: st.focus?.id || null, v: +st.v.toFixed(2), lock: st.lock?.id || null, left: +st.left.toFixed(2), card: cardFor?.id || null }; },
     resize: layout,
@@ -427,7 +428,7 @@ export function createHud({ onLock, onZoom }) {
         zmFill.setAttribute("y2", Math.max(-52, Math.min(52, zy(1))).toFixed(2));   // ×1 위치 ↔ 현재(y 0)
         zoomBtn.textContent = f.tele > 1.5 ? "－ 원래대로" : "＋ 확대";
         zoomBtn.classList.toggle("is-fill", f.tele > 1.5);   // (합집합 S23) 확대 중엔 면이 채워진 버튼
-        hintLine.textContent = f.tele > 1.5 ? "두 손가락으로 오므려도 됩니다" : "두 손가락으로 벌려도 됩니다";
+        hintLine.textContent = f.tele > 1.5 ? "두 손가락으로 오므려도 됩니다" : "";
       });
       // ── 아래 SKY · 시각(카드가 뜨면 숨김)
       set("sky", f.sky, (s) => { skyName.textContent = s; });

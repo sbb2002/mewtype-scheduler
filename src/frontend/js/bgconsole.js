@@ -146,7 +146,9 @@ export function createConsole(layer) {
   let project = null;
 
   let active = false;
+  const screen = stand.querySelector(".bgcs-lit");
   return {
+    pulse() { if (visible) screen.animate([{ opacity: .24 }, { opacity: .95, offset: .24 }, { opacity: active ? .28 : 0 }], { duration: 740 }); },
     /** 조작 패널이 떠 있는 동안 화면에 불(글로우) */
     setActive(on) { if (on !== active) { active = on; root.classList.toggle("is-active", on); } },
     setVisible(on) {
