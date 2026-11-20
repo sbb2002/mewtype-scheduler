@@ -14,7 +14,6 @@
 
 import { themeButton } from "./theme.js";
 import { acquireSite, geoPermission } from "./bgsite.js";
-import { declinationDeg } from "./bggyro.js";
 import { bgTheme, setBgTheme } from "./bgdeco.js";
 import { birthdayToday, birthdayOn, setBirthdayOn } from "./birthdayui.js";
 
@@ -129,6 +128,7 @@ function tryHint() {
 }
 
 let pop = null, press = null, eatClick = false, toastEl = null, toastT = 0, busy = false;
+let gyroMod = null;   // bggyro.js — 돔 테마에서 팝업을 열 때만 불러온다(syncPop)
 
 export function bgView() {
   try { return localStorage.getItem(KEY) === "outdoor" ? "outdoor" : "indoor"; } catch { return "indoor"; }
@@ -192,7 +192,17 @@ async function choose(value) {
   }
 }
 
-/** 지난번에 바깥 보기였고 권한이 그대로면 조용히 다시 연다 */
+/** 지난번에 바깥 보기였고 권한이 그대로면 조용히 다시 연다.
+ * (11-20 운영자) 위치는 UFO 돔이 실제로 그려질 때만 받는다 — 기본 테마 · 생일 장면 중에는 권한 확인도 위치 요청(GPS)도 하지 않는다.
+ * 테마를 돔으로 바꾸거나 생일 장면이 꺼져 돔이 나올 때 maybeRestore 가 그때 한 번 부른다. */
+let restored = false;
+const domeShown = () => bgTheme() === "dome" && !document.documentElement.hasAttribute("data-bday");
+function maybeRestore() {
+  if (restored || !domeShown()) return;
+  restored = true;
+  restore();
+}
+
 async function restore() {
   const granted = await geoPermission() === "granted";
   if (bgView() !== "outdoor") {
@@ -212,7 +222,11 @@ function syncPop() {
   // 방향 안내(UFO 테마일 때만) — 진북 보정(편각)은 자동이라 얼마나 더하고 있는지만 덧붙인다
   const note = pop.querySelector(".bgvw__note");
   note.hidden = cur !== "dome";
-  const dec = declinationDeg();
+  // 진북 보정 값은 둘러보기 모듈(bggyro.js)에 있다 — 돔 테마일 때만 불러온다(기본 테마는 안 받는다)
+  if (cur === "dome" && !gyroMod) {
+    import("./bggyro.js").then((m) => { gyroMod = m; syncPop(); }, () => {});
+  }
+  const dec = gyroMod ? gyroMod.declinationDeg() : null;
   note.textContent = "방향이 어긋나면 폰으로 공중에 8자를 몇 번 그려 주세요."
     + (dec == null ? "" : ` 진북 보정 ${dec > 0 ? "+" : ""}${dec.toFixed(1)}° 는 자동이에요.`);
 }
@@ -338,7 +352,9 @@ export function initBgView() {
   }, true);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
   window.addEventListener("resize", close);
-  restore();
+  maybeRestore();
+  document.addEventListener("mew:bgtheme", maybeRestore);   // 테마를 돔으로 바꾸면 그때 위치 복원
+  new MutationObserver(maybeRestore).observe(document.documentElement, { attributes: true, attributeFilter: ["data-bday"] });   // 생일 장면이 꺼져 돔이 나오면
   window.addEventListener("scroll", close, { passive: true, capture: true });
   // (11-10 운영자) 첫 화면 안내 — 페이지가 자리 잡은 뒤 한 번만(조건은 tryHint · 위 주석)
   hintTimer = setTimeout(tryHint, HINT_DELAY_MS);

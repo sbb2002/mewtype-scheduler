@@ -7,7 +7,13 @@
 import { layout, scribblePath, makeBody, impulse, step, shakePower, SHAKE_GAP_MS } from "./bglogic.js";
 import { buildVirtualScene, observeMemberAccent } from "./bgvirtual.js";
 import { buildDomeScene } from "./bgdome.js";
-import { startGyro } from "./bggyro.js";
+// (bg-dome, 11-20 운영자 「기본 테마에선 UFO 연산 최소화」) bggyro.js(+ bgmag 의 지자기 계수 표 계산 · bgsite · bgyawfix)는
+// 돔 테마에서 둘러보기를 켤 때만 불러온다 — 기본 테마는 받지도 계산하지도 않는다.
+let gyroImport = null;
+function startGyro() {
+  if (!gyroImport) gyroImport = import("./bggyro.js");
+  gyroImport.then((m) => m.startGyro(), (err) => { gyroImport = null; console.warn("[bgdome] 둘러보기 모듈 불러오기 실패", err); });
+}
 
 const NS = "http://www.w3.org/2000/svg";
 const RAD2DEG = 180 / Math.PI;

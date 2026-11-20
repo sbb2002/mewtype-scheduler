@@ -41,25 +41,37 @@ export function pulse(tMs, reduce) {
 }
 
 // ── 마지막 값 보관(돔이 나중에 만들어져도 읽을 수 있게) ──
-let current = null;      // 실제 데이터로 계산한 [{ key, live }] 5칸
+let current = null;      // 실제 데이터로 계산한 [{ key, live }] 5칸 — 돔이 읽을 때(lastLive) 계산한다
+let pending = null;      // 아직 계산 안 한 마지막 preview
 let currentOrder = FALLBACK_CHANNEL_ORDER;
 let forced = null;       // 확인용(?bgdebug) window.__bglive 가 준 키 목록 → 같은 모양으로 바꾼 값
 
-/** main.js 가 preview 를 받을 때 부른다 — 값을 보관하고 문서 이벤트 bg:live 를 낸다(detail = 5칸 배열). */
+/** main.js 가 preview 를 받을 때 부른다 — preview 만 보관하고 문서 이벤트 bg:live 를 낸다(detail 없음 — 값은 lastLive()).
+ * (11-20 운영자 「기본 테마에선 UFO 연산 최소화」) 5칸 계산은 돔이 lastLive() 로 읽을 때 한다 — 돔이 없으면(기본 테마) 계산하지 않는다. */
 export function publishLive(preview) {
-  current = liveLightKeys(preview);
-  currentOrder = orderOf(preview);
-  if (typeof document !== "undefined") document.dispatchEvent(new CustomEvent("bg:live", { detail: current }));
+  pending = preview;
+  if (typeof document !== "undefined") document.dispatchEvent(new CustomEvent("bg:live"));
 }
 
 /** 지금 쓸 5칸 배열 — 확인용 강제 값이 있으면 그것, 없으면 마지막 실제 값. 아직 아무것도 없으면 null. */
 export function lastLive() {
-  return forced || current;
+  if (forced) return forced;
+  flush();
+  return current;
+}
+
+/** 보관만 해 둔 preview 를 5칸으로 계산해 둔다 */
+function flush() {
+  if (!pending) return;
+  current = liveLightKeys(pending);
+  currentOrder = orderOf(pending);
+  pending = null;
 }
 
 /** 확인용(?bgdebug): keys 를 라이브로 강제. null 이면 실제 데이터로 되돌린다. */
 export function forceLive(keys) {
   if (keys == null) { forced = null; return; }
+  flush();   // 순서(currentOrder)를 마지막 preview 기준으로
   const set = new Set(Array.isArray(keys) ? keys : []);
   forced = currentOrder.slice(0, 5).map((key) => ({ key, live: set.has(key) }));
   while (forced.length < 5) forced.push({ key: null, live: false });
