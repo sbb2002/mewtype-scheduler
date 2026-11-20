@@ -41,7 +41,7 @@ export function parseState(text) {
   if (Array.isArray(o.unl)) s.unl = o.unl.filter((k) => UNLOCKS.includes(k));
   if (Array.isArray(o.vis)) s.vis = o.vis.filter((k, i, a) => DEEP_FIELDS.some((d) => d.key === k) && a.indexOf(k) === i);
   if (Array.isArray(o.found)) s.found = o.found.filter((k) => typeof k === "string").slice(0, 64);
-  if (o.seen && typeof o.seen === "object") for (const k of ["holdNotice", "locAsked", "ymmtShown", "lightOff"]) if (o.seen[k] === true) s.seen[k] = true;   // lightOff = 별빛 조명을 끔(3단계)
+  if (o.seen && typeof o.seen === "object") for (const k of ["holdNotice", "locAsked", "ymmtShown", "lightOff", "pinchHint"]) if (o.seen[k] === true) s.seen[k] = true;   // lightOff = 별빛 조명을 끔(3단계) · pinchHint = 「벌려 다가가기」 안내를 본 기기(11-20 검토 — 전엔 복원 목록에서 빠져 새로고침마다 다시 떴다)
   return s;
 }
 

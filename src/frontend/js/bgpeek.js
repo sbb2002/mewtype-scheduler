@@ -68,6 +68,7 @@ function hide() {
   clearTimeout(unlockT);
   document.activeElement?.blur?.();
   root.classList.add("bg-peek");
+  document.dispatchEvent(new Event("bgpeek:enter"));   // (11-20) 같은 손길(touchend) 안에서 동기로 — 돔이 소리(Web Audio)를 깨운다(bgdomegl.js)
   setInert(true);
   catcher.hidden = false;
   if (navigator.vibrate && !REDUCE.matches) try { navigator.vibrate(8); } catch { /* 진동 미지원 */ }

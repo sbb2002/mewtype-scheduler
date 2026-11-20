@@ -373,7 +373,7 @@ export function createHud({ onLock, onZoom }) {
         pulsePh += f.dt * rate;
         const ph = pulsePh % 1, beat = REDUCE.matches ? 0.5 : Math.exp(-ph * 7) + 0.55 * Math.exp(-Math.pow((ph - 0.22) * 9, 2));   // 쿵 · 딱 두 박(움직임 줄이기면 정지)
         const hue = Math.round(215 * (1 - kk));   // 0 빨강 → 30 주황 → 55 노랑 → 120 초록 → 215 파랑(멀수록). kk 는 가까울수록 1 이라 뒤집어 쓴다
-        pulse.style.setProperty("--pc", `hsl(${hue} 95% 58%)`);
+        set("pc", hue, (h) => pulse.style.setProperty("--pc", `hsl(${h} 95% 58%)`));   // (11-20 검토) 같은 색을 매 프레임 다시 쓰지 않는다
         pulseDot.style.transform = `scale(${(0.8 + 0.45 * beat).toFixed(2)})`;
         // (제안 D-3) 가까우면(20° 안) 두 번째 파동이 반 박자 늦게 겹쳐 퍼진다(소나 핑). 글자로도 거리를 준다
         const ph2 = (ph + 0.5) % 1, near20 = near < 20 ? 1 : 0;

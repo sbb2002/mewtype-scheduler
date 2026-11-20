@@ -1379,7 +1379,8 @@ export function createDomeGL(host, isPaused) {
     if (left <= 0) settle();
     const load = (name, key, unit) => {
       const img = new Image(); img.decoding = "async";
-      img.onload = () => {
+      // (11-20 검토) 업로드 전에 img.decode() 로 디코드를 메인 스레드 밖에서 끝낸다(4096×2048 첫 업로드 멈춤 — Antigravity 실측 ×4 556ms)
+      img.onload = () => (img.decode ? img.decode().catch(() => {}) : Promise.resolve()).then(() => {
         one();
         if (gl.isContextLost()) return;
         const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -1389,7 +1390,7 @@ export function createDomeGL(host, isPaused) {
         spaceTex[key] = tex; if (key === "map") spaceTex.mapW = img.width;
         if (outdoor) releaseGround?.terrain?.rebind?.();   // 그사이 바깥(지형)으로 바뀌었으면 13 · 14번 칸을 지형 것으로 되돌린다
         gl.activeTexture(gl.TEXTURE0); draw();
-      };
+      });
       img.onerror = () => { one(); console.warn("[bgdome] 우주 사진을 못 받음", name); };
       img.src = new URL("../assets/bg/space/" + name, import.meta.url).href;
     };
@@ -1414,7 +1415,7 @@ export function createDomeGL(host, isPaused) {
     if (deepLoading.has(i)) return deepLoading.get(i);
     const p = new Promise((res) => {
       const img = new Image(); img.decoding = "async";
-      img.onload = () => {
+      img.onload = () => (img.decode ? img.decode().catch(() => {}) : Promise.resolve()).then(() => {   // (11-20 검토) 디코드를 먼저 — 위 loadSpaceTex 와 같은 이유
         if (gl.isContextLost()) { deepLoading.delete(i); res(false); return; }
         const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, tex);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); gl.generateMipmap(gl.TEXTURE_2D);
@@ -1425,7 +1426,7 @@ export function createDomeGL(host, isPaused) {
         gl.activeTexture(gl.TEXTURE0);
         redrawIfResting();   // 쉬는 중이면 도착한 사진을 바로 그린다
         res(true);
-      };
+      });
       // (11-20 검토) 실패한 Promise 를 남겨 두면 이 방문 동안 다시 받지 못한다 → 지워서 다음 시도 때 새로 받는다
       img.onerror = () => { console.warn("[bgdome] 우주 사진을 못 받음", DEEP_SET[i].name); deepLoading.delete(i); res(false); };
       img.src = new URL("../assets/bg/space/" + DEEP_SET[i].name, import.meta.url).href;
@@ -1618,6 +1619,9 @@ export function createDomeGL(host, isPaused) {
   // 초행성X 는 우주 사진을 다 받은 뒤에 시작한다 — 안 그러면 빈 하늘이 맺혔다가 사진이 툭 나타난다(받는 동안 칸에 「불러오는 중…」, 길어야 4초).
   // 누른 순간 8ms 진동 한 번(배경 보기 열 때와 같은 값), 같은 칸 재선택은 없음.
   let picking = false;
+  // (11-20 검토 — Antigravity 발견) 전엔 기어 · 패널 칸을 눌러야 소리가 깨어나, 처음 사용자가 바라보기만으로 토성을 찾으면 해금 팡파르가 무음이었다.
+  // 배경 보기에 들어가는 튕기기 손길(bgpeek.js 가 그 touchend 안에서 동기로 쏘는 bgpeek:enter) 때 깨운다
+  document.addEventListener("bgpeek:enter", () => sound.wake(), { signal: life.signal });
   const buzz = () => { sound.wake(); if (navigator.vibrate && !reducedMotion.matches) try { navigator.vibrate(8); } catch { /* 미지원 */ } };   // 누르는 손길 = 소리 권한도 깨운다(bgsound.js)
   // (11-06 운영자) 고른 뒤 준비(우주 사진 · 위치) → 전환이 끝날 때까지 하늘 칸은 비활성. 준비 중엔 칸이 흐려지고, 전환 중엔 패널이 꺼져 있다.
   ufoPanel.onPick(pickSky);
@@ -1631,7 +1635,7 @@ export function createDomeGL(host, isPaused) {
     }
     if (key === INDOOR_BG && !outdoor) return;
     picking = true; ufoPanel.setBusy(true); buzz();
-    if (key === "space" && !outdoor) {
+    if (key === "space") {   // (11-20 검토) 바깥(지구)에서 올 때도 먼저 받는다 — 전엔 빈 우주가 보인 뒤 사진이 뒤늦게 떴다
       spacePreload = true;
       await Promise.race([loadSpaceTex(), new Promise((r) => setTimeout(r, 4000))]);
       spacePreload = false;
@@ -1647,7 +1651,7 @@ export function createDomeGL(host, isPaused) {
     if (!outdoor) beginSky(v);   // 바꾸기 전 화면을 찍는다(배경 보기 중일 때만)
     INDOOR_BG = v;
     warpDist = 0;
-    if (v === "space") { spaceRot = randomSpaceRot(); if (pendingPlace) applyPlace(); else setDeep(-1); }   // (11-09 해금) 패널로 들어오는 초행성X = 늘 사진 없는 기본 우주. 딥필드 · 달 궤도는 워프 · 자유 항해로만
+    if (v === "space") { spaceRot = randomSpaceRot(); delete hudSets.space; if (pendingPlace) applyPlace(); else setDeep(-1); }   // (11-09 해금) 패널로 들어오는 초행성X = 늘 사진 없는 기본 우주. 딥필드 · 달 궤도는 워프 · 자유 항해로만
     if (outdoor) { /* 바깥 보기 중 실내 값만 바뀜 — 실내로 돌아올 때 판정 */ }
     else if (v === "space") spaceEntered(); else endStar("fade");
     draw();
@@ -2741,7 +2745,9 @@ export function createDomeGL(host, isPaused) {
   document.addEventListener("bg:live", () => { recolor(); redrawIfResting(); }, { signal: life.signal });
   const themeObs = new MutationObserver(() => { recolor(); draw(); syncLoop(); }); themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   // (bg-dome, 11-10) 배경 보기 진입 · 해제(클래스 변화) — 낮은 등급이 쉬고 있었으면 다시 돌리고, 나가면 다음 프레임에서 마지막 한 번 맞춘 뒤 쉰다
-  const peekObs = new MutationObserver(() => { if (document.documentElement.classList.contains("bg-peek")) recolor(); syncLoop(); });   // (11-13) 배경 보기를 열 때 멤버 색도 다시 읽는다(아라레 레인 색은 아바타를 받은 뒤에야 생긴다) peekObs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  const peekObs = new MutationObserver(() => { if (document.documentElement.classList.contains("bg-peek")) recolor(); syncLoop(); });   // (11-13) 배경 보기를 열 때 멤버 색도 다시 읽는다(아라레 레인 색은 아바타를 받은 뒤에야 생긴다)
+  // (11-20 검토 — Antigravity 발견) 아래 observe 호출이 위 줄 주석 끝에 붙어 실행되지 않았다 → 낮은 등급에서 배경 보기에 들어가도 화면이 멈춘 채였다
+  peekObs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
   function finishThemeMotion() { themeStart = -Infinity; draw(); }
   reducedMotion.addEventListener("change", finishThemeMotion);
 

@@ -16,7 +16,7 @@
 // 데이터는 textContent / createElement 로만 주입한다(XSS 방어, innerHTML 금지).
 
 import { fetchPreview } from "./api.js";
-import { setMainMusicActive, setMainMusicHandOff } from './musicpriority.js';
+import { setMainMusicActive, setMainMusicHandOff, notePlayerState } from './musicpriority.js';
 import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS, FALLBACK_CHANNEL_ORDER } from "./config.js";
 import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange, kstDate, omakaseOrder, mediaCandidates, hasMv } from "./songs.js";
 import { wireSheetDrag } from "./sheetdrag.js";   // (마이크로 인터랙션) 모바일 시트 끌어 내리기
@@ -326,7 +326,9 @@ function emitPlayerState(state) {
   const s = curSong();
   const keys = s ? (Array.isArray(s.singers) && s.singers.length ? s.singers : [s.who]) : [];
   const members = keys.includes("group") ? FALLBACK_CHANNEL_ORDER.slice() : keys.filter((k) => FALLBACK_CHANNEL_ORDER.includes(k));
-  try { document.dispatchEvent(new CustomEvent(PLAYER_STATE_EVENT, { detail: { state, id: s ? s.id : null, members } })); } catch { /* 옛 브라우저 */ }
+  const detail = { state, id: s ? s.id : null, members };
+  notePlayerState(detail);   // (11-20) 늦게 만들어지는 UFO 돔이 지금 상태를 읽을 수 있게(musicpriority.js)
+  try { document.dispatchEvent(new CustomEvent(PLAYER_STATE_EVENT, { detail })); } catch { /* 옛 브라우저 */ }
 }
 
 function startTick() {
@@ -410,6 +412,7 @@ function onUnplayable() {
   st.playing = false;
   st.pos = 0;
   st.dur = 0;
+  emitPlayerState("paused");   // (11-20 검토) 소리가 멈췄는데 알리지 않아 음악 테두리가 켜진 채 남을 수 있었다
   if (!wantPlay) { deadId = st.curId; paint(); return; }   // 불러 두기만 한 곡(첫 화면 등) — 사용자가 틀기 전엔 안내 · 넘김 없이 둔다(▶ 를 누르면 togglePlay 가 다시 고른다)
   const more = st.qi >= 0 ? queueHasNext() : listHasNext();
   if (!more) st.ended = true;   // 넘어갈 곡이 없다 — 끝까지 재생하고 멈춘 것과 같다

@@ -7,6 +7,8 @@
 // 박자 · 스펙트럼 연동은 하지 않는다 — iframe 안의 소리는 페이지가 못 읽고, 곡별 BPM 자료도 없다.
 // DOM 은 createMusicRim 만 만진다. 위쪽 순수 함수는 bgmusic.selfcheck.mjs 가 확인한다.
 
+import { playerStateNow } from "./musicpriority.js";
+
 export const PLAYER_STATE_EVENT = "mew:player-state";   // player.js 와 같은 이름
 
 /** 이벤트 detail → { on(지금 소리가 나는 중), members(멤버 키 배열) }. 버퍼링은 바로 앞 상태를 이어 간다(잠깐 끊겨도 깜빡이지 않게) */
@@ -46,7 +48,7 @@ export function createMusicRim(colors, signal) {
   el.className = "bg-music-rim";
   el.setAttribute("aria-hidden", "true");
   document.body.appendChild(el);
-  let music = { on: false, members: [] }, sig = "";
+  let music = nextMusic(null, playerStateNow()), sig = "";   // (11-20 검토) 돔이 곡 재생 중에 만들어져도 지금 상태로 시작(전엔 다음 상태 변화 전까지 꺼져 있었다)
   const apply = () => {
     const s = music.on ? music.members.join(",") : "";
     if (s === sig) return;
@@ -55,6 +57,7 @@ export function createMusicRim(colors, signal) {
     el.classList.toggle("is-on", !!s);
   };
   document.addEventListener(PLAYER_STATE_EVENT, (e) => { music = nextMusic(music, e.detail); apply(); }, signal ? { signal } : undefined);
+  apply();   // 시작 상태(이미 재생 중이면 바로 켠다)
   return {
     get music() { return music; },
     refresh() { sig = null; apply(); },   // 다음 apply 가 같은 멤버여도 다시 칠하게
