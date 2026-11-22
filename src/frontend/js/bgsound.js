@@ -95,5 +95,19 @@ export function jump(kind) {
   const t = ac.currentTime, off = Math.max(0, JUMP_PEAK - (JUMP_ARRIVE[kind] ?? 0));
   const g = ac.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(JUMP_GAIN, t + JUMP_FADE); g.connect(master);
   const s = ac.createBufferSource(); s.buffer = b; s.connect(g); s.start(t, off);
-  s.onended = () => { try { g.disconnect(); } catch { /* 이미 */ } };
+  jumps.add(g);
+  s.onended = () => { jumps.delete(g); try { g.disconnect(); } catch { /* 이미 */ } };
+}
+const jumps = new Set();
+/**
+ * (bg-dome-mgcyan 스토리 「다시, 이 하늘」) 달 궤도 첫 도착 — 남은 워프 소리를 1.2초에 걸쳐 잦아들게 하고, 효과음 전체를 sec 초 동안 낮췄다 되돌린다.
+ * 유메미타 플레이어 곡(유튜브 iframe)은 이 소리 그래프 밖이라 음량 · 재생 위치가 그대로다.
+ */
+export function hush(sec = 2.5) {
+  if (!ac || !master) return;
+  const t = ac.currentTime;
+  for (const g of jumps) { try { g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0.0001, t, 0.4); } catch { /* 끝남 */ } }
+  master.gain.cancelScheduledValues(t);
+  master.gain.setTargetAtTime(masterLevel() * 0.2, t, 0.3);
+  master.gain.setTargetAtTime(masterLevel(), t + sec, 0.5);
 }

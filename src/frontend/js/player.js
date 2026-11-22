@@ -318,7 +318,7 @@ function onYtState(e) {
 
 /**
  * (bg-dome 시나리오) 재생 상태 알림 — document 로 PLAYER_STATE_EVENT 를 쏜다. 배경(돔)이 곡에 맞춰 멤버 색 · 별자리 힌트를 낸다(bgmusic.js).
- * detail = { state("playing" | "buffering" | "paused" | "ended"), id(곡 id | null), members(부른 멤버 키 — singers > who, 그룹 곡 = 다섯 명) }.
+ * detail = { state("playing" | "buffering" | "paused" | "ended"), id(곡 id | null), title(곡 제목 | null), members(부른 멤버 키 — singers > who, 그룹 곡 = 다섯 명) }.
  * 플레이어 쪽은 아무것도 기다리지 않는다(듣는 쪽이 없어도 그만).
  */
 export const PLAYER_STATE_EVENT = "mew:player-state";
@@ -326,7 +326,7 @@ function emitPlayerState(state) {
   const s = curSong();
   const keys = s ? (Array.isArray(s.singers) && s.singers.length ? s.singers : [s.who]) : [];
   const members = keys.includes("group") ? FALLBACK_CHANNEL_ORDER.slice() : keys.filter((k) => FALLBACK_CHANNEL_ORDER.includes(k));
-  const detail = { state, id: s ? s.id : null, members };
+  const detail = { state, id: s ? s.id : null, title: s ? s.title : null, members };   // title = (UFO 돔 스토리) NOW PLAYING 표시
   notePlayerState(detail);   // (11-20) 늦게 만들어지는 UFO 돔이 지금 상태를 읽을 수 있게(musicpriority.js)
   try { document.dispatchEvent(new CustomEvent(PLAYER_STATE_EVENT, { detail })); } catch { /* 옛 브라우저 */ }
 }

@@ -641,3 +641,29 @@ html.ufo-ui .bgp-exit, html.ufo-ui .bg-music-recommend {
   clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
 }
 @media (prefers-reduced-motion: reduce) { .ugr-warp:not(:disabled) { animation: none; } }
+
+/* ── (bg-dome-mgcyan) 스토리 「다시, 이 하늘」(js/bgstory.js) — 출발 · 발견 카드 · 방위선 레이더 라벨. 캔버스가 레이더 · 발견 장면을 그린다 */
+.ufo-story { position: fixed; inset: 0; z-index: 974; pointer-events: none; visibility: hidden; }
+.ufo-story.is-on { visibility: visible; }
+.ufo-story__cv { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ufo-story__probe { position: absolute; left: 0; bottom: 0; width: 0; height: env(safe-area-inset-bottom, 0px); visibility: hidden; }
+.ufo-story__card {
+  position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 118px); width: min(86vw, 360px); box-sizing: border-box;
+  padding: 10px 14px 12px; transform: translate(-50%, -6px); opacity: 0; transition: opacity .45s ease, transform .45s ease;
+  background: linear-gradient(rgba(94, 242, 255, .03), rgba(94, 242, 255, .03)), rgba(4, 8, 11, .8); color: var(--ufo-ink);
+}
+.ufo-story__card::before, .ufo-story__card::after { content: ""; position: absolute; width: 12px; height: 12px; border: 0 solid rgba(94, 242, 255, .7); }
+.ufo-story__card::before { left: 0; top: 0; border-width: 1.5px 0 0 1.5px; }
+.ufo-story__card::after { right: 0; bottom: 0; border-width: 0 1.5px 1.5px 0; }
+.ufo-story__card[hidden] { display: none; }
+.ufo-story__card.is-on { opacity: 1; transform: translate(-50%, 0); }
+.ufo-story__tag { margin: 0 0 6px; padding-bottom: 6px; border-bottom: 1px solid rgba(94, 242, 255, .25); font: 500 10px var(--ufo-mono); letter-spacing: .2em; color: rgba(94, 242, 255, .85); }
+.ufo-story__title { margin: 0 0 4px; font: 600 20px/1.2 var(--ufo-disp); letter-spacing: .08em; }
+.ufo-story__now { margin: 0; font: 500 11px/1.45 var(--ufo-mono), "Noto Sans JP", "Noto Sans KR", system-ui, sans-serif; letter-spacing: .08em; color: var(--ufo-pink); overflow-wrap: anywhere; }
+.ufo-story__title[hidden], .ufo-story__now[hidden], .ufo-story__rl[hidden] { display: none; }
+.ufo-story__rl {
+  position: absolute; left: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 37px); margin: 0;
+  font: 500 9px var(--ufo-mono); letter-spacing: .18em; color: rgba(94, 242, 255, .8); text-shadow: 0 0 3px rgba(4, 8, 24, .9);
+}
+.ufo-story__rl.is-hot { color: var(--ufo-pink); }
+@media (prefers-reduced-motion: reduce) { .ufo-story__card { transition: none; } }

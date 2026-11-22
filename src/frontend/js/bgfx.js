@@ -132,6 +132,9 @@ export function createFx(parent = document.body, onFirstYmmt) {
 
   return {
     queueYmmt() { firstYmmt = true; },
+    /** (스토리) 예약한 첫 YMMT 를 거둔다 — 항해(배경 보기)를 나가면 남은 첫 귀환 장면은 사라진다. 그리는 중이던 첫 YMMT 도 지운다 */
+    cancelYmmt() { firstYmmt = false; if (ymmt && ymmt.first) ymmt = null; },
+    get ymmtQueued() { return firstYmmt; },
     remove() { cv.remove(); },
     /**
      * 한 프레임. f = { active(보이기), place("earth" · "space" · 딥필드 키 …), ymmtOn(YMMT 해금), project(dir → [x, y] | null), ppd(화면 px / 도), yawDeg, beta(성간 이동 속도, 없으면 0), reduced }

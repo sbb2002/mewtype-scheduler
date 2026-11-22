@@ -10,6 +10,8 @@
 //   ymmt · freenav  마지막 보상(YMMT 별자리 · 자유 항해) ← 지구와 함께
 // 딥필드 = 우주 사진이 크게 보이는 우주 하늘(DEEP_SET 의 지구돋이를 뺀 다섯). 무작위 워프로 도착할 때마다 하나씩 「가 본 곳(vis)」에 들어가 워프 목적지에 추가된다.
 
+import { emptyStory, parseStory } from "./bgstorylogic.js";
+
 export const KEY = "bgunlock";
 export const UNLOCKS = ["space", "hold", "moon", "earth", "light", "ymmt", "freenav"];
 
@@ -29,7 +31,7 @@ export const placeInfo = (key) => BY_KEY[key] || null;
 export const keyOfIdx = (idx) => ([...DEEP_FIELDS, MOON].find((d) => d.idx === idx) || {}).key || null;
 
 /** 빈 상태 */
-export function emptyState() { return { v: 1, unl: [], vis: [], found: [], seen: {} }; }
+export function emptyState() { return { v: 1, unl: [], vis: [], found: [], seen: {}, story: emptyStory() }; }   // story = 「다시, 이 하늘」 진행(bgstorylogic.js)
 
 /** 저장된 글을 상태로(틀린 값은 버린다) */
 export function parseState(text) {
@@ -41,6 +43,7 @@ export function parseState(text) {
   if (Array.isArray(o.unl)) s.unl = o.unl.filter((k) => UNLOCKS.includes(k));
   if (Array.isArray(o.vis)) s.vis = o.vis.filter((k, i, a) => DEEP_FIELDS.some((d) => d.key === k) && a.indexOf(k) === i);
   if (Array.isArray(o.found)) s.found = o.found.filter((k) => typeof k === "string").slice(0, 64);
+  s.story = parseStory(o.story);
   if (o.seen && typeof o.seen === "object") for (const k of ["holdNotice", "locAsked", "ymmtShown", "lightOff", "pinchHint"]) if (o.seen[k] === true) s.seen[k] = true;   // lightOff = 별빛 조명을 끔(3단계) · pinchHint = 「벌려 다가가기」 안내를 본 기기(11-20 검토 — 전엔 복원 목록에서 빠져 새로고침마다 다시 떴다)
   return s;
 }
@@ -112,7 +115,7 @@ export function loadUnlock(storage) {
   return s;
 }
 export function saveUnlock(storage, s) {
-  try { storage.setItem(KEY, JSON.stringify({ v: 1, unl: s.unl, vis: s.vis, found: s.found, seen: s.seen })); return true; } catch { return false; }
+  try { storage.setItem(KEY, JSON.stringify({ v: 1, unl: s.unl, vis: s.vis, found: s.found, seen: s.seen, story: s.story || emptyStory() })); return true; } catch { return false; }
 }
 
 // ── 찾기(2단계, 시선 HUD bghud.js) ────────────────────────────────────────────

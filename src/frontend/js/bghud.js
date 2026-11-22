@@ -76,7 +76,7 @@ export function createHud({ onLock, onZoom }) {
   // 배경 보기 한 번의 상태
   let onT = 0, nextBeat = 0, beatI = 0, lastSky = null, lastFocusId = null, lastLockId = null, nextGlitch = 0, glitchUntil = 0;
   const logs = [], pings = [], blipLit = new Map();
-  let wasOn = false;
+  let wasOn = false, calmT0 = 0, calmMs = 0;   // calm = 스토리 발견 장면 동안 눈금이 잦아드는 구간
   function pushLog(s, warn = false) {
     const hex = ((Date.now() / 7 + logs.length * 977) & 0xffffff).toString(16).toUpperCase().padStart(6, "0");
     logs.push({ s: `${hex} ${s}`, warn });
@@ -441,6 +441,8 @@ export function createHud({ onLock, onZoom }) {
     /** 확인용(?bgdebug) — 잡기 상태 */
     get debug() { return { focus: st.focus?.id || null, v: +st.v.toFixed(2), lock: st.lock?.id || null, left: +st.left.toFixed(2), card: cardFor?.id || null }; },
     resize: layout,
+    /** (스토리 「다시, 이 하늘」) 지금부터 ms 동안 눈금 · 패널을 잦아들게 — 지구와 곡에 집중. 움직임 줄이기여도 투명도만 바뀐다 */
+    calm(ms = 2600) { calmT0 = performance.now() / 1000; calmMs = ms; },
     /** 배경 보기를 닫거나 패널이 뜨면 — 링 · 카드를 비운다 */
     reset() { resetDwell(st); hideCard(); root.classList.remove("is-targeted"); },
     /**
@@ -543,6 +545,10 @@ export function createHud({ onLock, onZoom }) {
       const kk = near < Infinity ? 1 - Math.min(1, near / 90) : 0;
       // ── 시안 HUD 층
       const v = st.lock ? 1 : st.v;
+      // (스토리 발견 장면) 눈금 · 패널이 calm(ms) 동안 잦아든다 — 0.15 까지 빠르게 내려갔다 끝에서 되돌아온다. 꺾쇠 · 대상 · 카드는 그대로
+      const cu = calmMs ? (ts - calmT0) / (calmMs / 1000) : 1;
+      const calmA = cu >= 1 || cu < 0 ? 1 : cu < 0.15 ? 1 - (cu / 0.15) * 0.85 : cu > 0.75 ? 0.15 + ((cu - 0.75) / 0.25) * 0.85 : 0.15;
+      g.globalAlpha = calmA;
       drawFrame(boot(0, 0.5));
       drawTape(yaw, f, boot(0.4, 0.8));
       drawDial(f, yaw, v, T, ts, boot, rd);
@@ -553,15 +559,18 @@ export function createHud({ onLock, onZoom }) {
         const p = boot(0.8, 0.7);
         if (p > 0) text(`ALT ${altS}  ·  ZOOM ${zv.toFixed(1)}  ·  HDG ${yaw.toFixed(1).padStart(5, "0")}`, W / 2, safeTop + 90, 10, A(0.8 * p), "center");
       }
+      g.globalAlpha = 1;
       drawReticle(f, ts, rd, hit);
       drawPings(ts);
+      g.globalAlpha = calmA;
       drawCorners(ts, f.sky, boot(0.2, 0.5));
+      g.globalAlpha = 1;
       const bt = ts - onT;
       if (bt < 2.4 && !rd) {
         const al = bt < 1.8 ? 1 : 1 - (bt - 1.8) / 0.6, msg = "INITIALIZING SENSOR ARRAY", n = Math.min(msg.length, Math.floor(bt * 30));
         text(msg.slice(0, n) + (Math.floor(bt * 8) % 2 ? "▌" : ""), W / 2, H / 2 + L.R * 1.24, 11, INK(al * 0.9), "center", DISP);
       }
-      if (!rd) {
+      if (!rd && calmA === 1) {
         if (ts > nextGlitch) { glitchUntil = ts + 0.12; nextGlitch = ts + 4 + Math.random() * 5; }
         if (ts < glitchUntil) glitch();
       }
