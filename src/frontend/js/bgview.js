@@ -172,26 +172,26 @@ async function choose(value) {
   if (busy) return;
   busy = true;
   const ori = askOrientation();
-  toast("위치를 확인하는 중…", 0);
+  toast("LOCATING…", 0);
   const { result, before } = await acquireSite();
   await ori;   // 방향 센서를 거절해도 위치가 있으면 바깥 하늘은 그린다(방향만 고정)
   busy = false;
   if (result === "ok") {
     setBgView("outdoor");   // 위치를 받은 뒤에 바꾼다 — 배경 보기 중이면 돔이 「재투영」 전환을 한다(bgdomegl.js beginSky)
     toast(document.documentElement.classList.contains("bg-peek")
-      ? "폰을 들어 실제 자리에 뜬 해 · 달을 찾아보세요."
-      : "폰을 들어 하늘을 보거나, 배경 보기로 레인을 걷어 보세요.", 4800);
+      ? "Raise your phone to find the real sun and moon."
+      : "Raise your phone to the sky, or open the background view.", 4800);
     return;
   }
   setBgView("indoor");
   if (result === "denied") {
     toast(before === "denied"
-      ? "바깥 보기는 위치 권한이 있어야 쓸 수 있어요. 브라우저 설정의 사이트 권한에서 위치를 허용해 주세요."
-      : "위치 권한을 허용한 뒤 지구 타일을 다시 눌러 주세요.", 6000);
+      ? "Outdoor view needs location. Allow location in your browser site settings."
+      : "Allow location, then tap EARTH again.", 6000);
   } else if (result === "unsupported") {
-    toast("이 브라우저는 위치를 알려 주지 않아 바깥 보기를 쓸 수 없어요.", 5000);
+    toast("This browser does not share location, so outdoor view is unavailable.", 5000);
   } else {
-    toast("위치를 가져오지 못했어요. 잠시 뒤 다시 골라 주세요. 실내 보기로 돌아갑니다.", 5000);
+    toast("Could not get location. Try again shortly. Returning to indoor view.", 5000);
   }
 }
 
@@ -231,8 +231,8 @@ function syncPop() {
     import("./bggyro.js").then((m) => { gyroMod = m; syncPop(); }, () => {});
   }
   const dec = gyroMod ? gyroMod.declinationDeg() : null;
-  note.textContent = "방향이 어긋나면 폰으로 공중에 8자를 몇 번 그려 주세요."
-    + (dec == null ? "" : ` 진북 보정 ${dec > 0 ? "+" : ""}${dec.toFixed(1)}° 는 자동이에요.`);
+  note.textContent = "If the heading drifts, draw a figure 8 in the air a few times."
+    + (dec == null ? "" : ` True-north correction ${dec > 0 ? "+" : ""}${dec.toFixed(1)}° is automatic.`);
 }
 
 /** 팝업을 만든다 — 생일 칸이 날마다 달라지므로 열 때마다 새로 */

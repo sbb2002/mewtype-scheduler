@@ -43,9 +43,9 @@ const ICONS = {
 };
 
 const TILES = [
-  { key: "pink", label: "버츄얼 스페이스", sub: "편안히 붕~ 떠있는 공간.", chips: [] },
-  { key: "space", label: "초행성X로의 여행", sub: "외우주로 가출하고 오겠습니다!", chips: ["길게 누르면 워프"] },
-  { key: "earth", label: "지구", sub: "당신이 있는 곳일지도?", chips: ["해", "달", "별", "실제 자리"] },
+  { key: "pink", label: "VIRTUAL SPACE", sub: "A soft space to float in.", chips: [] },
+  { key: "space", label: "VOYAGE TO PLANET X", sub: "Running off to outer space!", chips: ["HOLD TO WARP"] },
+  { key: "earth", label: "EARTH", sub: "Maybe right where you are?", chips: ["SUN", "MOON", "STARS", "LIVE SKY"] },
 ];
 
 /**
@@ -82,7 +82,7 @@ export function createUfoPanel() {
   const locked = {}, lockHint = {};
   let holdable = true;
   const fill = h("span", "ufo-tile__fill");
-  const showChip = (key) => { const c = firstChip[key]; if (!c) return; const text = key === "space" && charge > 0 && !warping ? `충전 ${Math.round(charge * 100)}%` : chipBase[key]; if (c.textContent !== text) c.textContent = text; };
+  const showChip = (key) => { const c = firstChip[key]; if (!c) return; const text = key === "space" && charge > 0 && !warping ? `CHARGE ${Math.round(charge * 100)}%` : chipBase[key]; if (c.textContent !== text) c.textContent = text; };
   function chargeLoop(now) {
     chargeRaf = 0;
     const dt = Math.min(0.25, (now - chargeLast) / 1000); chargeLast = now;
@@ -134,43 +134,43 @@ export function createUfoPanel() {
     list.append(b);
   });
   // 지구를 고를 때 위치 권한을 묻는다는 안내(시안 Main.dc.html — 지구 칸 아래)
-  const earthNote = h("p", "ufo-note", ["이곳의 해 · 달 위치를 맞추는 데 위치 권한을 써요."]);
+  const earthNote = h("p", "ufo-note", ["Location is used to place the sun and moon over you."]);
   list.append(earthNote);
   // (11-09 해금 3단계) 보상 칸 — 별빛 조명 켜고 끄기(멤버 별자리 5개) · 자유 항해(지구까지 연 뒤 — 가 본 딥필드 · 달 궤도로 바로)
-  const lightBtn = h("button", "ufo-mono ufo-extra-btn", ["별빛 조명 끄기"], { type: "button", "aria-pressed": "true" });
+  const lightBtn = h("button", "ufo-mono ufo-extra-btn", ["STARLIGHT OFF"], { type: "button", "aria-pressed": "true" });
   const navList = h("div", "ufo-nav");
-  const navBox = h("div", "ufo-navbox", [h("p", "ufo-mono ufo-navtit", ["자유 항해"]), navList]);
+  const navBox = h("div", "ufo-navbox", [h("p", "ufo-mono ufo-navtit", ["FREE ROAM"]), navList]);
   lightBtn.hidden = true; navBox.hidden = true;
   list.append(lightBtn, navBox);
   let onLight = null, onNav = null, lightOn = true;
   lightBtn.addEventListener("click", () => { if (on) clearMark("light"); if (on && onLight) onLight(!lightOn); });
 
   const head = h("div", "ufo-head", [
-    h("div", "ufo-head__l", [h("span", "ufo-mono ufo-type ufo-head__tag", ["UFO CONTROL"]), h("span", "ufo-stg ufo-head__title", ["어디로 갈까요?"])]),
+    h("div", "ufo-head__l", [h("span", "ufo-mono ufo-type ufo-head__tag", ["UFO CONTROL"]), h("span", "ufo-stg ufo-head__title", ["SELECT DESTINATION"])]),
   ]);
   const fullNav = h("span", "ufo-mono ufo-fullnav", ["FULL NAV"]);
   fullNav.hidden = true;
   head.append(fullNav);
   head.querySelector(".ufo-head__title").style.setProperty("--i", "0");
-  const foot = h("div", "ufo-mono ufo-foot ufo-stg", [h("span", null, ["오므리면 닫힘"]), h("span", null, ["SYS · OK"])]);
+  const foot = h("div", "ufo-mono ufo-foot ufo-stg", [h("span", null, ["PINCH TO CLOSE"]), h("span", null, ["SYS · OK"])]);
   foot.style.setProperty("--i", "4");
 
   const card = h("div", "ufo-card", [h("div", "ufo-scan"), head, list, foot]);
-  const root = h("div", "ufo-hud ufo-holo is-idle", holoParts(card), { role: "dialog", "aria-label": "UFO 조작 패널", "aria-hidden": "true" });
+  const root = h("div", "ufo-hud ufo-holo is-idle", holoParts(card), { role: "dialog", "aria-label": "UFO control panel", "aria-hidden": "true" });
   root.inert = true;
   document.body.appendChild(root);
 
   // 멀리 있을 때 안내(Approach.dc.html) — 누르기는 통과
   const hint = h("div", "ufo-hint", [
-    s("svg", { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "#4fe3ff", "stroke-width": "1.6", "aria-hidden": "true" }, [s("path", { d: "M8 8 4 4M4 4v4M4 4h4M16 16l4 4M20 20v-4M20 20h-4" })]),
-    h("span", null, ["줌인하여 가까이 다가가보세요."]),
+    s("svg", { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "#5ef2ff", "stroke-width": "1.6", "aria-hidden": "true" }, [s("path", { d: "M8 8 4 4M4 4v4M4 4h4M16 16l4 4M20 20v-4M20 20h-4" })]),
+    h("span", null, ["ZOOM IN TO APPROACH"]),
   ], { "aria-hidden": "true" });
   const hintLine = h("span", "ugr-wline");   // 사라질 때 지나가는 흰 선(bggear.js dissolve)
   hint.append(hintLine);
   document.body.appendChild(hint);
   // (11-09 해금) 안내 카드 — 해금 · 탐험 완료 뒤 이동 방법을 알려 준다. 눌러서 닫거나 10초 뒤 저절로 사라진다
   const guideTit = h("p", "ufo-mono ufo-guide__tit"), guideHow = h("p", "ufo-guide__how");
-  const guideEl = h("div", "ufo-guide", [h("div", "ufo-scan"), guideTit, guideHow, h("p", "ufo-mono ufo-guide__x", ["눌러서 닫기"])], { role: "status", "aria-live": "polite" });
+  const guideEl = h("div", "ufo-guide", [h("div", "ufo-scan"), guideTit, guideHow, h("p", "ufo-mono ufo-guide__x", ["TAP TO CLOSE"])], { role: "status", "aria-live": "polite" });
   guideEl.hidden = true;
   document.body.appendChild(guideEl);
   let guideT = 0;
@@ -187,7 +187,7 @@ export function createUfoPanel() {
   const marks = new Set();
   let demoPending = false, demoT = 0;
   const call = h("div", "ufo-call", [
-    s("svg", { width: 30, height: 30, viewBox: "0 0 24 24", fill: "none", stroke: "#4fe3ff", "stroke-width": "1.6", "stroke-linecap": "round", "aria-hidden": "true" }, [s("path", { d: "M8 8 4 4M4 4v4M4 4h4M16 16l4 4M20 20v-4M20 20h-4" })]),
+    s("svg", { width: 30, height: 30, viewBox: "0 0 24 24", fill: "none", stroke: "#5ef2ff", "stroke-width": "1.6", "stroke-linecap": "round", "aria-hidden": "true" }, [s("path", { d: "M8 8 4 4M4 4v4M4 4h4M16 16l4 4M20 20v-4M20 20h-4" })]),
   ], { "aria-hidden": "true" });
   document.body.appendChild(call);
   const markEl = (key) => (key === "light" ? lightBtn : tiles[key]);
@@ -238,8 +238,8 @@ export function createUfoPanel() {
       if (v) { holding = false; charge = 0; }
       fill.classList.toggle("is-full", v);
       fill.style.transform = v ? "scaleX(1)" : "scaleX(0)";
-      subEl.space.textContent = v ? "메롱이다, 그럼 바이바이!" : TILES[1].sub;
-      chipBase.space = v ? "성간 이동 중" : TILES[1].chips[0];
+      subEl.space.textContent = v ? "Bleh! Bye-bye!" : TILES[1].sub;
+      chipBase.space = v ? "IN TRANSIT" : TILES[1].chips[0];
       showChip("space");
     },
     /** 패널 바깥 틀(흔들기 — bgdomegl.js shakePanels) */
@@ -279,7 +279,7 @@ export function createUfoPanel() {
     nudge(key) { const b = tiles[key]; if (!b) return; b.classList.remove("is-nudge"); void b.offsetWidth; b.classList.add("is-nudge"); },
     get holdable() { return holdable; },
     /** (3단계) 별빛 조명 칸 — v = null 이면 숨김(아직 안 열림), true · false = 지금 켜짐 · 꺼짐. fn(바꿀 값) */
-    setLight(v, fn) { if (fn) onLight = fn; lightBtn.hidden = v === null; if (v !== null) { lightOn = v; lightBtn.textContent = v ? "별빛 조명 끄기" : "별빛 조명 켜기"; lightBtn.setAttribute("aria-pressed", v ? "true" : "false"); } },
+    setLight(v, fn) { if (fn) onLight = fn; lightBtn.hidden = v === null; if (v !== null) { lightOn = v; lightBtn.textContent = v ? "STARLIGHT OFF" : "STARLIGHT ON"; lightBtn.setAttribute("aria-pressed", v ? "true" : "false"); } },
     /** (3단계) 자유 항해 — items = [{ key, name, here }] 또는 null(아직 안 열림). FULL NAV 표시도 같이. fn(key) */
     setFreeNav(items, fn) {
       if (fn) onNav = fn;

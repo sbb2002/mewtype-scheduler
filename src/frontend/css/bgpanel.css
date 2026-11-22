@@ -4,11 +4,13 @@
    transform · opacity · clip-path 만 움직인다. 시안의 Chakra Petch 글꼴은 사이트가 웹 글꼴을 받지 않아 시스템 고정폭으로 대신한다. */
 
 :root {
-  --ufo-cyan: #4fe3ff;
-  --ufo-pink: #ff6fb5;
-  --ufo-ink: #eef6ff;
-  --ufo-sub: #a9bad0;
-  --ufo-mono: "Chakra Petch", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  /* (bg-dome-mgcyan) 모션그래픽 Cyan 팔레트 — --ufo-pink 는 이름은 그대로 두고 값만 강조 주황(시안의 HOT)으로 바꿨다(선택 · 켜짐 · 강조 자리) */
+  --ufo-cyan: #5ef2ff;
+  --ufo-pink: #ff8a3d;
+  --ufo-ink: #cfe6ea;
+  --ufo-sub: #7fa9b4;
+  --ufo-mono: "HUD Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --ufo-disp: "HUD Chakra", "Bahnschrift", "DIN Alternate", "Roboto Condensed", system-ui, sans-serif;
 }
 
 /* ── 바닥 콘솔: 비행접시 조종대. 화면 패널의 --ufo-* 색과 독립.
@@ -101,7 +103,7 @@
 }
 .ufo-line {
   position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; opacity: 0; pointer-events: none;
-  background: #ffe2f1; box-shadow: 0 0 6px var(--ufo-pink), 0 0 14px var(--ufo-cyan), 0 0 26px rgba(79, 227, 255, .6);
+  background: #ffe2f1; box-shadow: 0 0 6px var(--ufo-pink), 0 0 14px var(--ufo-cyan), 0 0 26px rgba(94, 242, 255, .6);
 }
 .ufo-holo.is-on .ufo-line { animation: ufo-line-in .6s ease-out both; }
 .ufo-holo.is-off .ufo-line { animation: ufo-line-out .45s ease-in both; }
@@ -150,7 +152,7 @@
 }
 .ufo-hud .ufo-card::-webkit-scrollbar { display: none; }
 /* 홀로그램 테두리(조작 · 기어 패널 공용, js holoParts) — 시안 선 + 바깥으로 번지는 푸른 글로우, 은은하게 숨 쉰다. 레드존이면 빨강 */
-.ufo-frame { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; filter: drop-shadow(0 0 2px rgba(79, 227, 255, .95)) drop-shadow(0 0 8px rgba(79, 227, 255, .6)) drop-shadow(0 0 20px rgba(79, 227, 255, .35)); animation: ufo-frame-breathe 3.2s ease-in-out infinite; transition: filter .3s; }
+.ufo-frame { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; filter: drop-shadow(0 0 2px rgba(94, 242, 255, .95)) drop-shadow(0 0 8px rgba(94, 242, 255, .6)) drop-shadow(0 0 20px rgba(94, 242, 255, .35)); animation: ufo-frame-breathe 3.2s ease-in-out infinite; transition: filter .3s; }
 .ufo-frame__line { fill: none; stroke: rgba(160, 242, 255, .9); stroke-width: 1.2; transition: stroke .3s; }
 @keyframes ufo-frame-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
 .ufo-holo.is-red .ufo-frame { filter: drop-shadow(0 0 2px rgba(255, 61, 90, .95)) drop-shadow(0 0 8px rgba(255, 61, 90, .6)) drop-shadow(0 0 20px rgba(255, 61, 90, .35)); }
@@ -164,8 +166,8 @@
 .ufo-head, .ufo-list, .ufo-foot { position: relative; }   /* 절대 위치인 주사선 층보다 위에 그려지게 */
 .ufo-scan::after {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 90px; opacity: 0;
-  background: linear-gradient(180deg, transparent, rgba(79, 227, 255, .12) 50%, rgba(190, 245, 255, .42) 90%, rgba(255, 255, 255, .72) 96%, transparent);
-  box-shadow: 0 2px 14px rgba(79, 227, 255, .4);
+  background: linear-gradient(180deg, transparent, rgba(94, 242, 255, .12) 50%, rgba(190, 245, 255, .42) 90%, rgba(255, 255, 255, .72) 96%, transparent);
+  box-shadow: 0 2px 14px rgba(94, 242, 255, .4);
 }
 .ufo-holo.is-on .ufo-scan::after { animation: ufo-scanline 6s linear .7s infinite; }
 @keyframes ufo-scanline {
@@ -193,9 +195,9 @@
   touch-action: manipulation;
   user-select: none; -webkit-user-select: none;
 }
-.ufo-tile.is-on { background: rgba(255, 95, 170, .14); border-color: var(--ufo-pink); box-shadow: inset 0 0 18px rgba(255, 111, 181, .18); }
+.ufo-tile.is-on { background: rgba(255, 95, 170, .14); border-color: var(--ufo-pink); box-shadow: inset 0 0 18px rgba(255, 138, 61, .18); }
 .ufo-tile:focus-visible { outline: 2px solid var(--ufo-cyan); outline-offset: 2px; }
-.ufo-tile__ico { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid rgba(79, 227, 255, .35); }
+.ufo-tile__ico { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid rgba(94, 242, 255, .35); }
 .ufo-tile.is-on .ufo-tile__ico { border-color: var(--ufo-pink); }
 .ufo-tile__text { display: flex; flex-direction: column; min-width: 0; }
 .ufo-tile__lbl { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
@@ -203,7 +205,7 @@
 .ufo-tile__led { width: 8px; height: 8px; border: 1px solid #5c6b85; }
 .ufo-tile.is-on .ufo-tile__led { background: var(--ufo-pink); border-color: var(--ufo-pink); box-shadow: 0 0 8px var(--ufo-pink); }
 .ufo-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-.ufo-chip { font-family: var(--ufo-mono); font-size: 10px; letter-spacing: .06em; color: var(--ufo-cyan); border: 1px solid rgba(79, 227, 255, .4); padding: 1px 5px; }
+.ufo-chip { font-family: var(--ufo-mono); font-size: 10px; letter-spacing: .06em; color: var(--ufo-cyan); border: 1px solid rgba(94, 242, 255, .4); padding: 1px 5px; }
 .ufo-note { margin: 0; padding: 0 4px; font-size: 12px; line-height: 1.4; color: #ffd27a; }
 .ufo-note[hidden] { display: none; }
 .ufo-tile:active { background: rgba(255, 95, 170, .22); }
@@ -213,14 +215,14 @@
 .ufo-tile:disabled { cursor: default; opacity: .55; }
 .ufo-tile.is-on:disabled { opacity: 1; }   /* 고른 칸은 「준비 중」 표시가 보이게 그대로 */
 .ufo-hud.is-tx { opacity: 0; }
-.ufo-foot { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .12em; color: #7f90a8; border-top: 1px solid rgba(79, 227, 255, .18); padding-top: 8px; }
+.ufo-foot { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .12em; color: #7f90a8; border-top: 1px solid rgba(94, 242, 255, .18); padding-top: 8px; }
 
 /* ── 멀리 있을 때 안내 */
 .ufo-hint {
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); z-index: 975;
   display: flex; align-items: center; gap: 8px; padding: 8px 12px; white-space: nowrap;
   font: 13px "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
-  background: rgba(10, 8, 26, .72); border: 1px solid rgba(79, 227, 255, .45);
+  background: rgba(10, 8, 26, .72); border: 1px solid rgba(94, 242, 255, .45);
   pointer-events: none; opacity: 0; visibility: hidden;
   transform: translateX(-50%);
   animation: ufo-hint-bob 2s ease-in-out infinite;
@@ -242,9 +244,9 @@
 .ufo-tile > span:not(.ufo-tile__fill) { position: relative; }
 .ufo-tile__fill {
   position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(0); pointer-events: none;
-  background: linear-gradient(90deg, rgba(255, 111, 181, .06), rgba(255, 111, 181, .34) calc(100% - 3px), #ffb3da calc(100% - 3px));
+  background: linear-gradient(90deg, rgba(255, 138, 61, .06), rgba(255, 138, 61, .34) calc(100% - 3px), #ffb3da calc(100% - 3px));
 }
-.ufo-tile__fill.is-full { background: rgba(255, 111, 181, .22); animation: ufo-fill-pulse 1.4s ease-in-out infinite; }
+.ufo-tile__fill.is-full { background: rgba(255, 138, 61, .22); animation: ufo-fill-pulse 1.4s ease-in-out infinite; }
 @keyframes ufo-fill-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 
 /* 성간 이동 레드존(β ≥ 0.85) — 조작 패널의 시안 테 · 글로우 · 꺾쇠가 빨갛게(11-06 운영자). 기어 패널(.ufo-gear.is-red)도 같은 색 */
@@ -306,7 +308,7 @@
 .ugr-warp:disabled { cursor: default; color: #7f90a8; background: rgba(18, 16, 40, .6); border-color: rgba(120, 200, 255, .2); box-shadow: none; animation: none; }
 @keyframes ugr-warp-ready { 0%, 100% { box-shadow: 0 0 12px rgba(255, 61, 90, .55); } 50% { box-shadow: 0 0 22px rgba(255, 61, 90, .85); } }
 /* 사라질 때 지나가는 흰 띠(js dissolve) — 하늘 전환의 「여기까지 완료」 선과 같은 모양 */
-.ugr-wline { position: absolute; height: 12px; margin-top: -6px; border-radius: 6px; pointer-events: none; opacity: 0; background: #fff8ee; box-shadow: 0 0 8px var(--ufo-cyan), 0 0 22px rgba(79, 227, 255, .7); }
+.ugr-wline { position: absolute; height: 12px; margin-top: -6px; border-radius: 6px; pointer-events: none; opacity: 0; background: #fff8ee; box-shadow: 0 0 8px var(--ufo-cyan), 0 0 22px rgba(94, 242, 255, .7); }
 @media (prefers-reduced-motion: reduce) {
   .ugr-thumb.is-tgt, .ugr-warp, .ufo-frame { animation: none; }
 }
@@ -333,13 +335,13 @@
 .ufo-tile.is-nope { animation: ufo-nope .32s ease; }
 @keyframes ufo-nope { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 50% { transform: translateX(3px); } 75% { transform: translateX(-2px); } }
 .ufo-tile.is-nudge { animation: ufo-nudge 1.1s ease 2; }
-@keyframes ufo-nudge { 0%, 100% { box-shadow: none; } 40% { box-shadow: 0 0 0 2px var(--ufo-pink), 0 0 18px rgba(255, 111, 181, .55); } }
+@keyframes ufo-nudge { 0%, 100% { box-shadow: none; } 40% { box-shadow: 0 0 0 2px var(--ufo-pink), 0 0 18px rgba(255, 138, 61, .55); } }
 
 .ufo-toast {
   position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 138px); z-index: 978; translate: -50% 0;   /* 시선 HUD 의 HDG 아래 */
   max-width: calc(100vw - 32px); padding: 7px 14px; pointer-events: none;
   font: 600 13px/1.4 "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink); text-align: center; letter-spacing: .02em;
-  background: rgba(5, 8, 24, .78); border: 1px solid rgba(79, 227, 255, .45); box-shadow: 0 0 14px rgba(79, 227, 255, .25);
+  background: rgba(5, 8, 24, .78); border: 1px solid rgba(94, 242, 255, .45); box-shadow: 0 0 14px rgba(94, 242, 255, .25);
   clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
   opacity: 0; transition: opacity .3s ease;
 }
@@ -357,94 +359,84 @@
 .ugc-item, .ugc-cancel {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 10px 12px;
   font: 600 14px "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink); text-align: left; cursor: pointer;
-  background: rgba(11, 18, 48, .7); border: 1px solid rgba(79, 227, 255, .3);
+  background: rgba(11, 18, 48, .7); border: 1px solid rgba(94, 242, 255, .3);
 }
 .ugc-item:hover, .ugc-item:focus-visible { border-color: var(--ufo-cyan); outline: none; }
 .ugc-item.is-here { cursor: default; opacity: .55; }
 .ugc-cancel { justify-content: center; font-size: 12px; letter-spacing: .14em; color: var(--ufo-sub); border-color: rgba(169, 186, 208, .3); }
 @media (prefers-reduced-motion: reduce) { .ufo-tile.is-nope, .ufo-tile.is-nudge { animation: none; } .ufo-toast { transition: none; } }
 
-/* ── (11-09 해금 2단계) 시선 HUD — js/bghud.js, 디자인 = F5 시안. 돔(배경) 위 · 조작 패널(975) 아래. 누르기는 카드만 받는다 */
+/* ── (11-09 해금 2단계) 시선 HUD — js/bghud.js. (cyan 재구성 11-23) 모양 = HUD 모션그래픽 시안 Cyan(캔버스가 계기 전부를 그린다). 돔(배경) 위 · 조작 패널(975) 아래. 누르기는 카드만 받는다 */
 .bghud { position: fixed; inset: 0; z-index: 972; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .25s ease, visibility 0s linear .25s; }
 .bghud.is-on { opacity: 1; visibility: visible; transition: opacity .25s ease; }
-.bghud .hud-adaptive { opacity: .35; transition: opacity .2s ease; }
-.bghud.is-targeted .hud-adaptive { opacity: 1; }
-@media (prefers-reduced-motion: reduce) { .bghud .hud-adaptive { transition: none; } }
-/* (합집합 S1) 색 · 글꼴 토큰 — bghud.js 의 VAL · CY · MID · DIM · PK 와 같은 값 */
-.bghud { --hud-val: #eaffff; --hud-cy: #4fe3ff; --hud-mid: #7fcfe6; --hud-dim: #5f7f96; --hud-pk: #ff6fb5; --hud-num: "Bahnschrift", "DIN Alternate", "DIN Condensed", "Roboto Condensed", "sans-serif-condensed", ui-monospace, Menlo, Consolas, monospace; }
-.bghud-sky, .bghud-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-/* 숫자 폭 고정 · 슬래시 0(레퍼런스 ref1 · ref4 공통) — 0 과 O 를 구별. (합집합 S1) 글꼴은 장체 숫자 스택 */
-.bghud-svg text { font-family: var(--hud-num); font-variant-numeric: tabular-nums slashed-zero; font-feature-settings: "tnum" 1, "zero" 1; }
-.bghud-svg text.ko { font-family: "Noto Sans KR", system-ui, sans-serif; letter-spacing: 0; }   /* 한글 라벨 · 하늘 이름은 본문 글꼴(제안 B-2) */
-/* (합집합 S1) 글로우 — 현재값 약한 발광 · 진행 호 · 4단계 라벨(자간 .16em) · 방위 칸 채움(S11) */
-.bghud-svg .hud-v { filter: drop-shadow(0 0 1.5px rgba(79, 227, 255, .55)) drop-shadow(.6px .6px 0 rgba(4, 8, 24, .85)); }
-.bghud-svg .hud-arc { filter: drop-shadow(0 0 2px rgba(79, 227, 255, .7)); }
-.bghud-svg text.lab { letter-spacing: .16em; }
-/* (화면 확인 후) 밝은 하늘에서도 글자가 읽히게 어두운 외곽선 — 필터 대신 stroke. 셀 안 숫자 · 잔상은 제외 */
-.bghud-svg text { paint-order: stroke fill; stroke: rgba(4, 8, 24, .6); stroke-width: .7px; stroke-linejoin: round; }
-.bghud-svg text.nostroke { stroke: none; }
-.bghud-svg .hud-cell { fill: #4fe3ff; filter: drop-shadow(0 0 2.5px rgba(79, 227, 255, .6)); }
+/* (cyan 재구성) 시안 글꼴 — 라틴 부분만 이 사이트에 둔다(assets/fonts, SIL OFL 1.1 — 같은 폴더 OFL-*.txt). 외부 글꼴 서버는 부르지 않는다.
+   이름을 「HUD …」 로 따로 둬서 다른 화면(--ufo-mono 의 "Chakra Petch")에는 번지지 않게 한다. 한글은 시스템 글꼴로 넘어간다 */
+@font-face { font-family: "HUD Chakra"; src: url("../assets/fonts/chakra-petch-600-latin.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "HUD Mono"; src: url("../assets/fonts/jetbrains-mono-latin.woff2") format("woff2"); font-weight: 100 800; font-style: normal; font-display: swap; }
+/* 색 · 글꼴 토큰 — bghud.js 의 CYR · HOTR · MONO · DISP 와 같은 값 */
+.bghud {
+  --hud-val: #eaffff; --hud-cy: #5ef2ff; --hud-mid: #7fcfe6; --hud-dim: #5f7f96; --hud-hot: #ff8a3d; --hud-ink: #cfe6ea;
+  --hud-mono: "HUD Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --hud-disp: "HUD Chakra", "Bahnschrift", "DIN Alternate", "Roboto Condensed", "Noto Sans KR", system-ui, sans-serif;
+  --hud-num: var(--hud-mono);
+}
+.bghud-sky { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* 시안의 주사선 — 화면 전체에 한 겹 */
+.bghud::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, .028) 0 1px, transparent 1px 3px); }
 .bghud-probe { position: absolute; top: 0; left: 0; width: 0; height: env(safe-area-inset-top, 0px); visibility: hidden; }
+/* 정보 카드 = 시안 패널 꼴 — 어두운 반투명 바탕 · 네 모서리 꺾쇠 · 제목 + 밑줄 */
 .bghud-card {
   position: absolute; left: 14px; right: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 136px); z-index: 1;
   max-width: 420px; margin: 0 auto; display: grid; gap: 0; pointer-events: none;
-  /* (제안 A-4 · 7) 홀로그램 글래스 카드 — 어두운 유리. 글자 대비를 위해 불투명도는 76%. (합집합 S21) 카드 안에만 12px 약한 격자 */
   padding: 0 0 12px;
-  background: linear-gradient(rgba(79, 227, 255, .04) 1px, transparent 1px), linear-gradient(90deg, rgba(79, 227, 255, .04) 1px, transparent 1px), rgba(10, 8, 26, .76);
-  background-size: 12px 12px, 12px 12px, auto;
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  background: linear-gradient(rgba(94, 242, 255, .03), rgba(94, 242, 255, .03)), rgba(4, 8, 11, .72);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   font-variant-numeric: tabular-nums;
   opacity: 0; transform: translateY(10px); transition: opacity .22s ease, transform .22s ease;
-  font-family: "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
+  font-family: var(--hud-mono); color: var(--hud-ink);
 }
 .bghud-card.is-on { opacity: 1; transform: none; pointer-events: auto; }
-/* (레퍼런스 ref1 · ref4) 카드 대각선 두 모서리에만 ㄱ자 꺾쇠 — 전체 테두리 대신 */
-.bghud-card::before, .bghud-card::after {
-  content: ""; position: absolute; width: 16px; height: 16px; pointer-events: none;
-  border: 0 solid var(--ufo-cyan); opacity: .85;
-}
-.bghud-card::before { left: -4px; top: -4px; border-left-width: 1.5px; border-top-width: 1.5px; }
-.bghud-card::after { right: -4px; bottom: -4px; border-right-width: 1.5px; border-bottom-width: 1.5px; }
-/* (합집합 S19) 머리띠 — 높이 20 · 채운 띠 · 아래 선. 왼쪽 캡션 TARGET(4단계) · 오른쪽 칩 */
-.bghud-hd { height: 20px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px; background: rgba(79, 227, 255, .14); border-bottom: 1px solid rgba(79, 227, 255, .35); }
-.bghud-cap { font: 400 9px var(--hud-num); letter-spacing: .16em; color: var(--hud-mid); text-shadow: 0 0 3px rgba(4, 8, 24, .9); }
-/* (피드백 P3-8) 본문 2열 — 왼쪽 대상명 · 안내 · 손가락 안내, 오른쪽 버튼(세 줄에 걸쳐 가운데). 버튼은 .bghud-btns 가 grid-row 로 자리를 잡는다 */
-.bghud-bd { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; row-gap: 8px; align-items: center; padding: 10px 14px 0; }
-/* (합집합 S22) 우상 · 좌하 = 작은 십자(9 × 9, 굵기 1px, 카드 바깥 −4px) */
-.bghud-x { position: absolute; width: 9px; height: 9px; pointer-events: none; opacity: .7; background: linear-gradient(var(--hud-cy), var(--hud-cy)) center / 100% 1px no-repeat, linear-gradient(var(--hud-cy), var(--hud-cy)) center / 1px 100% no-repeat; }
-.bghud-x--tr { top: -4px; right: -4px; }
-.bghud-x--bl { bottom: -4px; left: -4px; }
-/* (레퍼런스 ref4 「v.1.32」 배지) NEW 는 솔리드 핑크 칩 */
-.bghud-card.is-new .bghud-k > span:not(.bghud-star) { color: #0a081a; background: var(--ufo-pink); padding: 1px 7px; line-height: 1.5; box-shadow: 0 0 10px rgba(255, 111, 181, .45); }
-.bghud-k { display: flex; align-items: center; gap: 6px; min-height: 12px; font: 500 9.5px var(--ufo-mono); letter-spacing: .14em; color: var(--ufo-pink); }
-.bghud-star { width: 12px; height: 12px; background: var(--ufo-pink); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); filter: drop-shadow(0 0 4px var(--ufo-pink)); }
+.bghud-card::before, .bghud-card::after, .bghud-x { content: ""; position: absolute; width: 12px; height: 12px; pointer-events: none; border: 0 solid rgba(94, 242, 255, .6); }
+.bghud-card::before { left: 0; top: 0; border-left-width: 1.5px; border-top-width: 1.5px; }
+.bghud-card::after { right: 0; bottom: 0; border-right-width: 1.5px; border-bottom-width: 1.5px; }
+.bghud-x--tr { right: 0; top: 0; border-right-width: 1.5px; border-top-width: 1.5px; }
+.bghud-x--bl { left: 0; bottom: 0; border-left-width: 1.5px; border-bottom-width: 1.5px; }
+/* 머리 = 제목 TARGET(시안 패널 제목) + 밑줄 · 오른쪽 칩 */
+.bghud-hd { height: 30px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 10px; padding: 4px 0 0; border-bottom: 1px solid rgba(94, 242, 255, .25); }
+.bghud-cap { font: 600 10px var(--hud-disp); letter-spacing: .16em; color: rgba(94, 242, 255, .85); }
+.bghud-bd { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; row-gap: 6px; align-items: center; padding: 10px 10px 0; }
+/* NEW 는 솔리드 주황 칩 */
+.bghud-card.is-new .bghud-k > span:not(.bghud-star) { color: #04080b; background: var(--hud-hot); padding: 1px 7px; line-height: 1.5; }
+.bghud-k { display: flex; align-items: center; gap: 6px; min-height: 12px; font: 500 9.5px var(--hud-mono); letter-spacing: .14em; color: var(--hud-hot); }
+.bghud-star { width: 12px; height: 12px; background: var(--hud-hot); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); }
 .bghud-star[hidden] { display: none; }
-/* (합집합 S20) 대상명 22px · 700 · VAL + 얇은 글로우 · 종류 · 설명은 MID · DIM (글로우 없음) */
-.bghud-card h3 { margin: 0; font: 700 20px/1.2 "Noto Sans KR", system-ui, sans-serif; color: var(--hud-val); text-shadow: 0 0 6px rgba(79, 227, 255, .6), 1px 1px 0 rgba(4, 8, 24, .9); }
-.bghud-to { margin: 0; font: 500 12px/1.4 "Noto Sans KR", system-ui, sans-serif; letter-spacing: 0; color: var(--hud-mid); }
+.bghud-card h3 { margin: 0; font: 600 20px/1.2 var(--hud-disp); color: var(--hud-ink); }
+.bghud-to { margin: 0; font: 400 11px/1.4 var(--hud-mono), "Noto Sans KR", system-ui, sans-serif; letter-spacing: .02em; color: rgba(94, 242, 255, .8); }
 .bghud-to[hidden] { display: none; }
 .bghud-btns { display: flex; gap: 8px; justify-content: flex-end; grid-column: 2; grid-row: 1 / span 3; }
-/* (제안 A-4 · E-3) 작은 알약 버튼 — 손가락 목표 크기 44px 확보 */
-/* (합집합 S23) 얇은 테두리 직사각 버튼 — 확대 중(.is-fill)엔 면을 채운다 */
+/* 시안 버튼 — 얇은 테두리 · 대각 두 모서리 깎기 · 대문자 자간. 손가락 목표 44px. 확대 중(.is-fill)엔 면을 채운다 */
 .bghud-btn {
-  flex: 0 0 auto; min-height: 44px; min-width: 76px; padding: 10px 14px; border: 0; cursor: pointer; color: var(--hud-val); font-weight: 600; font-size: 12px; font-family: "Bahnschrift", "DIN Alternate", "Roboto Condensed", "sans-serif-condensed", "Noto Sans KR", system-ui, sans-serif; letter-spacing: .08em;
-  background: rgba(79, 227, 255, .08); box-shadow: inset 0 0 0 1px var(--hud-cy);
+  flex: 0 0 auto; min-height: 44px; min-width: 76px; padding: 10px 14px; cursor: pointer; color: var(--hud-ink); font: 500 12px var(--hud-mono); letter-spacing: .12em;
+  background: transparent; border: 1px solid rgba(94, 242, 255, .45);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
 }
-.bghud-btn.is-fill { background: var(--hud-cy); color: #06121c; }
-.bghud-btn:focus-visible { outline: 2px solid var(--ufo-cyan); outline-offset: 2px; }
+.bghud-btn:hover { border-color: var(--hud-cy); color: var(--hud-cy); }
+.bghud-btn.is-fill { background: var(--hud-cy); border-color: var(--hud-cy); color: #04080b; }
+/* clip-path 가 바깥을 잘라 outline 이 안쪽에 보이도록 offset 을 음수로 */
+.bghud-btn:focus-visible { outline: 1px solid var(--hud-cy); outline-offset: -4px; }
 .bghud-hn { margin: 0; font-size: 10.5px; color: var(--hud-dim); }
 @media (prefers-reduced-motion: reduce) { .bghud, .bghud.is-on, .bghud-card { transition: none; } }
 
 /* ── (11-09 해금 3단계) 보상 — FULL NAV · 별빛 조명 칸 · 자유 항해 · 별빛 조명(화면 아래 멤버 5색) */
 .ufo-head { position: relative; }
-.ufo-fullnav { position: absolute; right: 0; top: 0; font-size: 10px; letter-spacing: .14em; color: var(--ufo-pink); border: 1px solid var(--ufo-pink); padding: 1px 6px; box-shadow: 0 0 8px rgba(255, 111, 181, .4); }
+.ufo-fullnav { position: absolute; right: 0; top: 0; font-size: 10px; letter-spacing: .14em; color: var(--ufo-pink); border: 1px solid var(--ufo-pink); padding: 1px 6px; box-shadow: 0 0 8px rgba(255, 138, 61, .4); }
 .ufo-fullnav[hidden], .ufo-extra-btn[hidden], .ufo-navbox[hidden] { display: none; }
-.ufo-extra-btn { width: 100%; padding: 8px 10px; font-size: 12px; letter-spacing: .1em; color: var(--ufo-ink); background: rgba(11, 18, 48, .6); border: 1px solid rgba(255, 111, 181, .45); cursor: pointer; }
+.ufo-extra-btn { width: 100%; padding: 8px 10px; font-size: 12px; letter-spacing: .1em; color: var(--ufo-ink); background: rgba(11, 18, 48, .6); border: 1px solid rgba(255, 138, 61, .45); cursor: pointer; }
 .ufo-extra-btn[aria-pressed="false"] { border-color: rgba(169, 186, 208, .35); color: var(--ufo-sub); }
 .ufo-navbox { display: grid; gap: 6px; }
 .ufo-navtit { margin: 0; font-size: 10.5px; letter-spacing: .16em; color: var(--ufo-pink); }
 .ufo-nav { display: flex; flex-wrap: wrap; gap: 6px; }
-.ufo-nav__it { padding: 6px 9px; font: 600 12px "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink); background: rgba(11, 18, 48, .7); border: 1px solid rgba(79, 227, 255, .35); cursor: pointer; }
+.ufo-nav__it { padding: 6px 9px; font: 600 12px "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink); background: rgba(11, 18, 48, .7); border: 1px solid rgba(94, 242, 255, .35); cursor: pointer; }
 .ufo-nav__it.is-here { opacity: .5; cursor: default; }
 .bg-starlight {
   position: fixed; left: 0; right: 0; bottom: 0; height: 32vh; z-index: 971; pointer-events: none; opacity: 0; transition: opacity .6s ease;
@@ -460,9 +452,9 @@
 .ufo-guide {
   position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 64px); z-index: 990; width: min(86vw, 340px);
   padding: 12px 14px 10px; color: var(--ufo-ink); overflow: hidden;
-  background: rgba(10, 8, 26, .82); border: 1px solid rgba(79, 227, 255, .6);
+  background: rgba(10, 8, 26, .82); border: 1px solid rgba(94, 242, 255, .6);
   clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
-  box-shadow: 0 0 18px rgba(79, 227, 255, .35); opacity: 0; transform: translate(-50%, -8px); transition: opacity .3s ease, transform .3s ease;
+  box-shadow: 0 0 18px rgba(94, 242, 255, .35); opacity: 0; transform: translate(-50%, -8px); transition: opacity .3s ease, transform .3s ease;
 }
 .ufo-guide.is-on { opacity: 1; transform: translate(-50%, 0); }
 .ufo-guide__tit { margin: 0 0 4px; font-size: 12px; letter-spacing: .14em; color: var(--ufo-cyan); }
@@ -478,7 +470,7 @@
 .bghud-pulse__o i { background: var(--pc); box-shadow: 0 0 10px var(--pc); }
 .bghud-pulse__o b { border: 1.5px solid var(--pc); }
 /* (합집합 S25 · S26 · S27) SIGNAL 라벨 · 각도 3자리 · 분절 막대 5개 · 미니 파형 */
-.bghud-sig__l { font: 400 9px var(--hud-num); letter-spacing: .16em; color: var(--hud-mid); text-shadow: 0 0 3px rgba(4, 8, 24, .9); }
+.bghud-sig__l { font: 400 9px var(--ufo-mono); letter-spacing: .16em; color: var(--hud-mid); text-shadow: 0 0 3px rgba(4, 8, 24, .9); }
 .bghud-sig__v { font: 700 11px var(--hud-num); letter-spacing: .04em; color: var(--hud-val); font-variant-numeric: tabular-nums slashed-zero; }
 .bghud-sig__bars { display: flex; gap: 2px; }
 .bghud-sig__bars i { display: block; width: 2px; height: 9px; background: rgba(127, 207, 230, .22); }
@@ -496,23 +488,23 @@
    .is-fresh = 새로 열린 칸(눌러 볼 때까지 테두리가 숨 쉬듯 빛남) · .ufo-call = 패널이 꺼져 있을 때 화면 아래 「벌려 다가가기」 손짓 신호
    .ufo-fly = 찾은 대상 모양이 가운데에서 아래(콘솔 쪽)로 날아가는 것(js/bgpanel.js fly). 움직임 줄이기면 빛남은 고정, 손짓 · 날아가기 없음 */
 .ufo-tile.is-fresh, .ufo-extra-btn.is-fresh { border-color: var(--ufo-cyan); animation: ufo-fresh 1.6s ease-in-out infinite; }
-@keyframes ufo-fresh { 0%, 100% { box-shadow: 0 0 0 rgba(79, 227, 255, 0), inset 0 0 0 rgba(79, 227, 255, 0); } 50% { box-shadow: 0 0 14px rgba(79, 227, 255, .55), inset 0 0 14px rgba(79, 227, 255, .22); } }
+@keyframes ufo-fresh { 0%, 100% { box-shadow: 0 0 0 rgba(94, 242, 255, 0), inset 0 0 0 rgba(94, 242, 255, 0); } 50% { box-shadow: 0 0 14px rgba(94, 242, 255, .55), inset 0 0 14px rgba(94, 242, 255, .22); } }
 .ufo-call {
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); z-index: 975;   /* 「줌인하여…」 안내(.ufo-hint, 아래 96px) 밑 */
   width: 46px; height: 46px; margin-left: -23px; display: grid; place-items: center; border-radius: 50%;
-  border: 1px solid rgba(79, 227, 255, .5); background: rgba(10, 8, 26, .5);
+  border: 1px solid rgba(94, 242, 255, .5); background: rgba(10, 8, 26, .5);
   pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s;
 }
-.ufo-call::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid rgba(79, 227, 255, .7); animation: ufo-call-ring 1.8s ease-out infinite; }
+.ufo-call::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid rgba(94, 242, 255, .7); animation: ufo-call-ring 1.8s ease-out infinite; }
 .ufo-call svg { animation: ufo-call-spread 1.8s ease-in-out infinite; }
 @keyframes ufo-call-ring { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(1.9); opacity: 0; } }
 @keyframes ufo-call-spread { 0%, 100% { transform: scale(.82); } 50% { transform: scale(1.08); } }
 html.bg-peek .ufo-call.is-on { opacity: 1; visibility: visible; transition: opacity .3s ease; }
 html[data-bg-panel] .ufo-call { opacity: 0; visibility: hidden; }
-.ufo-fly { position: fixed; left: 50%; top: 50%; z-index: 979; pointer-events: none; filter: drop-shadow(0 0 8px rgba(79, 227, 255, .9)); }
+.ufo-fly { position: fixed; left: 50%; top: 50%; z-index: 979; pointer-events: none; filter: drop-shadow(0 0 8px rgba(94, 242, 255, .9)); }
 .ufo-fly > i { display: block; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 0 12px 4px rgba(255, 210, 240, .9); }
 @media (prefers-reduced-motion: reduce) {
-  .ufo-tile.is-fresh, .ufo-extra-btn.is-fresh { animation: none; box-shadow: 0 0 10px rgba(79, 227, 255, .45); }
+  .ufo-tile.is-fresh, .ufo-extra-btn.is-fresh { animation: none; box-shadow: 0 0 10px rgba(94, 242, 255, .45); }
   .ufo-call::after, .ufo-call svg { animation: none; }
 }
 
@@ -539,3 +531,113 @@ html.bg-peek .bg-music-rim.is-on { opacity: 1; visibility: visible; transition: 
 .ufo-gear[data-warp-phase="ready"] .ugr-warp { border-color: #9ffff0; color: #d9fffa; }
 .ugc-signal { color: #a8fff2; border-color: currentColor; }
 .bghud-hn:empty { display: none; }
+
+/* ══ (bg-dome-mgcyan) 모션그래픽 Cyan 문법 — UFO 돔 테마의 화면 부품 전부 ══════════════════════════════════
+   시안(HUD Motion Study · Cyan)의 본질만 옮긴다: 어두운 반투명 판 · 네 모서리 꺾쇠 · 머리글 + 가는 밑줄 · 대문자 자간 ·
+   고정폭 데이터 글꼴(HUD Mono) + 각진 제목 글꼴(HUD Chakra) · 대각 두 모서리 깎은 버튼 · 둥근 모서리 · 번지는 글로우 없음 ·
+   cyan 선 + 강조는 주황 하나. 하늘(유메미타 분홍 · 도형)은 건드리지 않는다(11-23 운영자 — 하늘을 어둡게 덮는 안은 롤백).
+   기존 규칙 뒤에 두어 덮어쓴다(되돌리려면 이 절만 지우면 된다 — 위 :root 팔레트 · 리터럴 색 치환은 따로) */
+
+/* 판 — 조작 패널 · 기어 · 목적지 고르기 · 해금 안내 */
+.ufo-hud, .ufo-gear, .ufo-chooser, .ufo-guide, .ufo-toast, .ufo-hint { font-family: var(--ufo-mono); }
+.ufo-card, .ugr-card, .ugc-card {
+  background: linear-gradient(rgba(94, 242, 255, .03), rgba(94, 242, 255, .03)), rgba(4, 8, 11, .8);
+  clip-path: none; border: 0;
+}
+.ufo-frame { display: none; }   /* 번지는 홀로그램 테두리 대신 시안의 모서리 꺾쇠만 */
+.ufo-brk { width: 12px; height: 12px; border-color: rgba(94, 242, 255, .7); }
+.ufo-brk--tl { left: 0; top: 0; border-width: 1.5px 0 0 1.5px; }
+.ufo-brk--tr { right: 0; top: 0; border-width: 1.5px 1.5px 0 0; }
+.ufo-brk--bl { left: 0; bottom: 0; border-width: 0 0 1.5px 1.5px; }
+.ufo-brk--br { right: 0; bottom: 0; border-width: 0 1.5px 1.5px 0; }
+.ufo-holo.is-red .ufo-brk { border-color: #ff3d5a; }
+.ufo-scan { background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, .03) 0 1px, transparent 1px 3px); }
+.ufo-line { background: #eaffff; box-shadow: 0 0 6px var(--ufo-cyan), 0 0 16px rgba(94, 242, 255, .5); }
+.ufo-chroma--p { border-color: var(--ufo-pink); }
+
+/* 머리글 = 작은 태그 + 각진 제목 + 가는 밑줄 */
+.ufo-head { padding-bottom: 8px; border-bottom: 1px solid rgba(94, 242, 255, .25); }
+.ufo-head__tag { font: 500 10px var(--ufo-mono); letter-spacing: .2em; color: rgba(94, 242, 255, .85); }
+.ufo-head__title { font: 600 18px/1.15 var(--ufo-disp); letter-spacing: .06em; text-transform: uppercase; color: var(--ufo-ink); }
+.ufo-fullnav { font: 500 9.5px var(--ufo-mono); letter-spacing: .16em; box-shadow: none; padding: 2px 6px; }
+.ufo-foot { font: 400 9.5px var(--ufo-mono); letter-spacing: .16em; color: rgba(94, 242, 255, .55); border-top-color: rgba(94, 242, 255, .2); }
+
+/* 칸 — 얇은 테 · 대각 두 모서리 깎기 · 켜짐 = 주황 테 */
+.ufo-tile {
+  background: rgba(4, 8, 11, .45); border: 1px solid rgba(94, 242, 255, .22);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+.ufo-tile.is-on { background: rgba(255, 138, 61, .08); border-color: var(--ufo-pink); box-shadow: none; }
+.ufo-tile:active { background: rgba(255, 138, 61, .14); }
+.ufo-tile:focus-visible { outline: 1px solid var(--ufo-cyan); outline-offset: -4px; }
+.ufo-tile__ico { border-color: rgba(94, 242, 255, .35); }
+.ufo-tile__lbl { font: 600 14px var(--ufo-disp); letter-spacing: .06em; text-transform: uppercase; }
+.ufo-tile__sub { font: 400 11px/1.4 var(--ufo-mono); color: var(--ufo-sub); }
+.ufo-tile__led { border-color: rgba(94, 242, 255, .4); }
+.ufo-tile.is-on .ufo-tile__led { box-shadow: none; }
+.ufo-chip { font: 500 9.5px var(--ufo-mono); letter-spacing: .12em; padding: 1px 5px; }
+.ufo-note { font: 400 11px/1.4 var(--ufo-mono); color: var(--ufo-pink); }
+.ufo-tile__fill { background: linear-gradient(90deg, rgba(255, 138, 61, .05), rgba(255, 138, 61, .28) calc(100% - 2px), var(--ufo-pink) calc(100% - 2px)); }
+.ufo-tile__fill.is-full { background: rgba(255, 138, 61, .18); }
+.ufo-tile.is-locked { border-color: rgba(127, 169, 180, .35); background: rgba(4, 8, 11, .3); }
+.ufo-tile.is-locked .ufo-tile__lbl::after { content: "  · LOCKED"; font: 500 9.5px var(--ufo-mono); letter-spacing: .14em; color: var(--ufo-sub); opacity: 1; }
+.ufo-tile.is-locked .ufo-tile__sub { color: var(--ufo-cyan); }
+@keyframes ufo-nudge { 0%, 100% { box-shadow: none; } 40% { box-shadow: 0 0 0 1px var(--ufo-pink); } }
+@keyframes ufo-fresh { 0%, 100% { border-color: rgba(94, 242, 255, .3); } 50% { border-color: var(--ufo-cyan); } }
+.ufo-extra-btn, .ufo-nav__it {
+  font: 500 11px var(--ufo-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ufo-ink);
+  background: rgba(4, 8, 11, .5); border: 1px solid rgba(94, 242, 255, .4);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+.ufo-extra-btn { border-color: var(--ufo-pink); }
+.ufo-navtit { font: 500 10px var(--ufo-mono); letter-spacing: .2em; }
+
+/* 멀리 있을 때 안내 · 알림 · 해금 안내 — 같은 판 + 대문자 자간 */
+.ufo-hint {
+  font: 500 11px var(--ufo-mono); letter-spacing: .16em; text-transform: uppercase;
+  background: rgba(4, 8, 11, .78); border-color: rgba(94, 242, 255, .45);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+.ufo-toast {
+  font: 500 11px/1.5 var(--ufo-mono); letter-spacing: .12em; text-transform: uppercase;
+  background: rgba(4, 8, 11, .82); border-color: rgba(94, 242, 255, .45); box-shadow: none;
+}
+.ufo-guide { background: rgba(4, 8, 11, .85); border-color: rgba(94, 242, 255, .45); box-shadow: none; }
+.ufo-guide__tit { font: 600 12px var(--ufo-disp); letter-spacing: .16em; color: var(--ufo-pink); }
+.ufo-guide__how { font: 400 11.5px/1.55 var(--ufo-mono); }
+.ufo-guide__x { font: 400 9px var(--ufo-mono); letter-spacing: .16em; color: rgba(94, 242, 255, .5); }
+.ufo-call { border-color: rgba(94, 242, 255, .5); background: rgba(4, 8, 11, .55); }
+.ufo-fly { filter: drop-shadow(0 0 6px rgba(94, 242, 255, .9)); }
+.ufo-fly > i { box-shadow: 0 0 10px 3px rgba(94, 242, 255, .8); }
+
+/* 성간 이동 기어 — 판독값 각진 글꼴 · 레일은 각진 막대 · 손잡이는 깎은 사각 */
+.ugr-read { font: 600 22px var(--ufo-disp); letter-spacing: .04em; }
+.ugr-chip { font: 500 9.5px var(--ufo-mono); letter-spacing: .14em; }
+.ugr-track, .ugr-fill, .ugr-redrail { border-radius: 0; }
+.ugr-fill { box-shadow: none; }
+.ugr-thumb {
+  border-radius: 0; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-width: 1.5px; box-shadow: none; background: #04080b;
+  font: 600 11px var(--ufo-disp);
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+}
+.ugr-labels { font: 500 9.5px var(--ufo-mono); letter-spacing: .1em; }
+.ugr-warp { font: 600 12px var(--ufo-disp); letter-spacing: .3em; box-shadow: none; animation: none; }
+.ugr-warp:not(:disabled) { animation: ugr-warp-blink 1s steps(1, end) infinite; }
+@keyframes ugr-warp-blink { 0%, 100% { background: rgba(255, 61, 90, .22); } 50% { background: rgba(255, 61, 90, .42); } }
+
+/* 워프 목적지 고르기 */
+.ugc-item, .ugc-cancel {
+  font: 500 12px var(--ufo-mono); letter-spacing: .1em; text-transform: uppercase;
+  background: rgba(4, 8, 11, .55); border: 1px solid rgba(94, 242, 255, .3);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+.ugc-cancel { color: var(--ufo-sub); letter-spacing: .2em; }
+.ugc-signal { color: var(--ufo-pink); }
+
+/* 배경 보기 위쪽 버튼(BOARD · 추천 곡) — UFO 돔 테마일 때만(html.ufo-ui, js/bgpeek.js) */
+html.ufo-ui .bgp-exit, html.ufo-ui .bg-music-recommend {
+  border-radius: 0; border: 1px solid rgba(94, 242, 255, .45); background: rgba(4, 8, 11, .72); color: var(--ufo-ink);
+  font: 500 11px var(--ufo-mono); letter-spacing: .14em; text-transform: uppercase; padding: 4px 12px;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+@media (prefers-reduced-motion: reduce) { .ugr-warp:not(:disabled) { animation: none; } }

@@ -66,7 +66,7 @@ assert.equal(keyOfIdx(-1), null);
 {
   const s = emptyState();
   const r = onFound(s, { id: "x_crab", explore: "crab" });
-  assert.ok(r.fresh && r.k === "탐험 완료" && s.vis.includes("crab") && r.guide);
+  assert.ok(r.fresh && r.k === "SURVEYED" && s.vis.includes("crab") && r.guide);
   assert.ok(!onFound(s, { id: "x_crab", explore: "crab" }).toast);
 }
 console.log("bgunlock self-check ok");
@@ -77,9 +77,9 @@ console.log("bgunlock self-check ok");
   assert.ok(r.fresh && r.k === "NEW" && has(s, "space") && r.toast);
   r = onFound(s, { id: "saturn", unlock: "space" });
   assert.ok(!r.fresh && r.k === "" && !r.toast, "다시 잡으면 이름만");
-  for (const z of ZODIAC.slice(0, 4)) { r = onFound(s, { id: z.id, zod: true, who: z.who }); assert.equal(r.k, "별자리"); assert.ok(!has(s, "light")); }
+  for (const z of ZODIAC.slice(0, 4)) { r = onFound(s, { id: z.id, zod: true, who: z.who }); assert.equal(r.k, "SIGN"); assert.ok(!has(s, "light")); }
   r = onFound(s, { id: ZODIAC[4].id, zod: true, who: ZODIAC[4].who });
-  assert.ok(has(s, "light") && r.toast === "별빛 조명 열림");
+  assert.ok(has(s, "light") && r.toast === "STARLIGHT UNLOCKED");
   r = onFound(s, { id: "earthT", unlock: "earth" });
   assert.ok(has(s, "earth") && has(s, "ymmt") && has(s, "freenav"));
   r = onFound(s, { id: "d_crab" });

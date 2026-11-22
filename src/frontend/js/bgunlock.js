@@ -15,14 +15,14 @@ export const UNLOCKS = ["space", "hold", "moon", "earth", "light", "ymmt", "free
 
 /** 딥필드 다섯(키 · 사진 번호 = bgdomegl.js DEEP_SET 순서 · 이름). 달 궤도는 따로 */
 export const DEEP_FIELDS = [
-  { key: "smacs", idx: 0, name: "SMACS 0723 딥필드", feat: { u: 0.43, v: 0.37, n: "밝은 회절 별" } },
-  { key: "crab", idx: 2, name: "게 성운", feat: { u: 0.62, v: 0.5, n: "게 펄서" } },
-  { key: "orion", idx: 3, name: "오리온 성운", feat: { u: 0.52, v: 0.45, n: "트라페지움" } },
-  { key: "pillars", idx: 4, name: "창조의 기둥", feat: { u: 0.4, v: 0.17, n: "기둥 꼭대기" } },
-  { key: "tara", idx: 5, name: "타란툴라 성운", feat: { u: 0.25, v: 0.42, n: "R136 성단" } },
+  { key: "smacs", idx: 0, name: "SMACS 0723 DEEP FIELD", feat: { u: 0.43, v: 0.37, n: "DIFFRACTION STAR" } },
+  { key: "crab", idx: 2, name: "CRAB NEBULA", feat: { u: 0.62, v: 0.5, n: "CRAB PULSAR" } },
+  { key: "orion", idx: 3, name: "ORION NEBULA", feat: { u: 0.52, v: 0.45, n: "TRAPEZIUM" } },
+  { key: "pillars", idx: 4, name: "PILLARS OF CREATION", feat: { u: 0.4, v: 0.17, n: "PILLAR TIP" } },
+  { key: "tara", idx: 5, name: "TARANTULA NEBULA", feat: { u: 0.25, v: 0.42, n: "R136 CLUSTER" } },
 ];
 // feat = 그 딥필드 사진에서만 찾을 수 있는 표식 하나(그림 좌표 u 왼 → 오 · v 위 → 아래). 이걸 찾으면 그 딥필드를 「탐험한」 것으로 친다(운영자 11-09)
-export const MOON = { key: "moon", idx: 1, name: "달 궤도", feat: { u: 0.57, v: 0.515, n: "지구" } };
+export const MOON = { key: "moon", idx: 1, name: "LUNAR ORBIT", feat: { u: 0.57, v: 0.515, n: "EARTH" } };
 const BY_KEY = Object.fromEntries([...DEEP_FIELDS, MOON].map((d) => [d.key, d]));
 export const placeInfo = (key) => BY_KEY[key] || null;
 /** 사진 번호 → 장소 키(없으면 null = 사진 없는 기본 우주) */
@@ -88,10 +88,10 @@ export function randomDest(s, cur, rand = Math.random) {
 export function chooserItems(s, cur) {
   if (!s.vis.length && !has(s, "moon")) return null;
   // 딥필드 다섯을 다 탐험했고 달 궤도가 아직이면 무작위 자리를 달 궤도가 대신한다(운영자 11-09 — 무작위를 잠깐 없애고 달 궤도로)
-  const items = [allDeepVisited(s) && !has(s, "moon") ? { key: "moon", name: MOON.name, here: false, signal: true } : { key: "random", name: "무작위", here: false }];
+  const items = [allDeepVisited(s) && !has(s, "moon") ? { key: "moon", name: MOON.name, here: false, signal: true } : { key: "random", name: "RANDOM", here: false }];
   for (const k of s.vis) items.push({ key: k, name: BY_KEY[k].name, here: k === cur });
   if (has(s, "moon")) items.push({ key: "moon", name: MOON.name, here: cur === "moon" });
-  if (cur !== "space") items.push({ key: "space", name: "기본 우주로", here: false });
+  if (cur !== "space") items.push({ key: "space", name: "BACK TO OPEN SPACE", here: false });
   return items;
 }
 
@@ -118,32 +118,32 @@ export function saveUnlock(storage, s) {
 // ── 찾기(2단계, 시선 HUD bghud.js) ────────────────────────────────────────────
 /** 멤버 탄생 별자리 다섯(config.js BIRTHDAYS 의 생일 → 황도 12궁, 운영자 11-09). 모양은 단순화한 예시 — 별 오프셋 [방위°, 고도°] · 선 [i, j]. key = 멤버 키(곡 힌트 bgmusic.js) */
 export const ZODIAC = [
-  { id: "z_arale", key: "arale", n: "사자자리", who: "아라레", S: [[0, 0], [1, 4], [3, 7], [6, 7], [7, 4], [-7, 2], [-13, 0], [-8, -2]], L: [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 0]] },
-  { id: "z_yuno", key: "yuno", n: "전갈자리", who: "유노", S: [[-8, 6], [-7, 3], [-6, 0], [-3, -2], [0, -3], [3, -4], [6, -3], [8, -1], [7, 2]], L: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8]] },
-  { id: "z_nonoka", key: "nonoka", n: "양자리", who: "노노카", S: [[-6, -1], [-1, 1], [2, 2], [5, 4]], L: [[0, 1], [1, 2], [2, 3]] },
-  { id: "z_ritsu", key: "ritsu", n: "물병자리", who: "리츠", S: [[-8, 4], [-4, 5], [0, 3], [2, 0], [1, -4], [4, -6], [-2, -2], [-5, -5]], L: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [3, 6], [6, 7]] },
-  { id: "z_miyako", key: "miyako", n: "처녀자리", who: "미야코", S: [[0, 0], [-4, 3], [-8, 5], [3, 4], [6, 8], [-1, -4], [2, -8], [-5, -1]], L: [[0, 1], [1, 2], [0, 3], [3, 4], [0, 5], [5, 6], [1, 7]] },
+  { id: "z_arale", key: "arale", n: "LEO", who: "ARARE", S: [[0, 0], [1, 4], [3, 7], [6, 7], [7, 4], [-7, 2], [-13, 0], [-8, -2]], L: [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 0]] },
+  { id: "z_yuno", key: "yuno", n: "SCORPIO", who: "YUNO", S: [[-8, 6], [-7, 3], [-6, 0], [-3, -2], [0, -3], [3, -4], [6, -3], [8, -1], [7, 2]], L: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8]] },
+  { id: "z_nonoka", key: "nonoka", n: "ARIES", who: "NONOKA", S: [[-6, -1], [-1, 1], [2, 2], [5, 4]], L: [[0, 1], [1, 2], [2, 3]] },
+  { id: "z_ritsu", key: "ritsu", n: "AQUARIUS", who: "RITSU", S: [[-8, 4], [-4, 5], [0, 3], [2, 0], [1, -4], [4, -6], [-2, -2], [-5, -5]], L: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [3, 6], [6, 7]] },
+  { id: "z_miyako", key: "miyako", n: "VIRGO", who: "MIYAKO", S: [[0, 0], [-4, 3], [-8, 5], [3, 4], [6, 8], [-1, -4], [2, -8], [-5, -1]], L: [[0, 1], [1, 2], [0, 3], [3, 4], [0, 5], [5, 6], [1, 7]] },
 ];
 const UNLOCK_MSG = {
-  space: { to: "→ 조작 패널에 초행성X로의 여행이 열렸어요", toast: "초행성X로의 여행 열림" },
-  hold: { to: "→ 초행성X 칸을 길게 눌러 성간 이동", toast: "성간 이동 열림" },
-  earth: { to: "→ 조작 패널에 지구가 열렸어요", toast: "지구 열림 · 보상: YMMT 별자리 · 자유 항해" },
+  space: { to: "→ PLANET X UNLOCKED IN UFO CONTROL", toast: "PLANET X UNLOCKED" },
+  hold: { to: "→ HOLD PLANET X TO JUMP", toast: "INTERSTELLAR JUMP UNLOCKED" },
+  earth: { to: "→ EARTH UNLOCKED IN UFO CONTROL", toast: "EARTH UNLOCKED · YMMT SIGN · FREE ROAM" },
 };
 /**
  * 해금 종류 표지. bgdomegl.js unlockFx 가 이 객체로 어느 칸을 빛낼지(FX_TILE) 고르고, bghud.js 는 있으면 불꽃 연출을 터뜨린다.
  * (11-09 엔 「해금 2초 뒤 자동 이동 + 이 글로 안내 카드」 였으나 11-13 시나리오에서 자동 이동 · 안내 카드를 없앴다 — title · go · how 글은 지금 화면에 쓰이지 않는다)
  */
 export const GUIDE = {
-  space: { title: "초행성X 열림", go: "space", how: "조작 패널(배경 보기에서 가운데 UFO 콘솔로 다가가기)의 「초행성X로의 여행」 칸을 누르면 올 수 있어요." },
-  hold: { title: "성간 이동 열림", go: "hold", how: "초행성X 칸을 1초 길게 누르면 성간 이동. 아래 기어 패널에서 5단까지 올린 뒤 WARP 를 누르세요." },
-  earth: { title: "지구 열림", go: "earth", how: "조작 패널의 「지구」 칸을 누르면 올 수 있어요. 위치 권한을 허용하면 실제 하늘이 보여요." },
-  moon: { title: "달 궤도 열림", go: null, how: "워프 목적지에서 「달 궤도」를 고르면 다시 올 수 있어요." },
-  light: { title: "별빛 조명 열림", go: null, how: "조작 패널의 「별빛 조명」 칸에서 켜고 끌 수 있어요." },
-  explore: { title: "딥필드 탐험 완료", go: null, how: "WARP 를 누르면 목적지에 이 딥필드가 올라 있어요." },
+  space: { title: "PLANET X UNLOCKED", go: "space", how: "Approach the UFO console to open UFO CONTROL, then tap VOYAGE TO PLANET X." },
+  hold: { title: "INTERSTELLAR JUMP UNLOCKED", go: "hold", how: "Hold PLANET X for 1 second to jump. Shift up to gear 5 below, then press WARP." },
+  earth: { title: "EARTH UNLOCKED", go: "earth", how: "Tap EARTH in UFO CONTROL. Allow location to see your real sky." },
+  moon: { title: "LUNAR ORBIT UNLOCKED", go: null, how: "Pick LUNAR ORBIT as a warp destination to return." },
+  light: { title: "STARLIGHT UNLOCKED", go: null, how: "Toggle STARLIGHT in UFO CONTROL." },
+  explore: { title: "DEEP FIELD SURVEYED", go: null, how: "This deep field is now listed under WARP destinations." },
 };
 /**
  * 대상을 잡았다(시선 링 100%). t = { id, unlock?("space" | "hold" | "earth"), zod?(별자리면 true), who? }.
- * 돌려줌 = { fresh(처음 찾음), k(카드 위 작은 글 — "NEW" · "별자리" · ""), to(카드 아래 줄 — 없으면 ""), toast(알림 — 없으면 ""), changed(저장 필요) }.
+ * 돌려줌 = { fresh(처음 찾음), k(카드 위 작은 글 — "NEW" · "SURVEYED" · "SIGN" · ""), to(카드 아래 줄 — 없으면 ""), toast(알림 — 없으면 ""), changed(저장 필요) }.
  * 지구를 찾으면 지구와 함께 마지막 보상(ymmt · freenav)도 열린다. 별자리 다섯을 다 찾으면 별빛 조명.
  */
 export function onFound(s, t) {
@@ -154,10 +154,10 @@ export function onFound(s, t) {
     if (t.unlock === "earth") { unlock(s, "ymmt"); unlock(s, "freenav"); }
     if (opened) { r.k = "NEW"; r.to = UNLOCK_MSG[t.unlock].to; r.toast = UNLOCK_MSG[t.unlock].toast; r.changed = true; r.guide = GUIDE[t.unlock]; }
   } else if (t.explore) {
-    if (explore(s, t.explore)) { r.k = "탐험 완료"; r.to = "→ 워프 목적지에 추가됐어요"; r.toast = `탐험 완료 · ${placeInfo(t.explore).name}`; r.changed = true; r.guide = GUIDE.explore; }
+    if (explore(s, t.explore)) { r.k = "SURVEYED"; r.to = "→ ADDED TO WARP DESTINATIONS"; r.toast = `SURVEYED · ${placeInfo(t.explore).name}`; r.changed = true; r.guide = GUIDE.explore; }
   } else if (t.zod && fresh) {
-    r.k = "별자리"; r.to = `${t.who}의 탄생 별자리`;
-    if (ZODIAC.every((z) => s.found.includes(z.id)) && unlock(s, "light")) { r.to += " · 별빛 조명이 열렸어요"; r.toast = "별빛 조명 열림"; r.guide = GUIDE.light; }
+    r.k = "SIGN"; r.to = `${t.who} · BIRTH SIGN`;
+    if (ZODIAC.every((z) => s.found.includes(z.id)) && unlock(s, "light")) { r.to += " · STARLIGHT UNLOCKED"; r.toast = "STARLIGHT UNLOCKED"; r.guide = GUIDE.light; }
   }
   return r;
 }

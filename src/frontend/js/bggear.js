@@ -44,7 +44,7 @@ function beltSign() {
     ]),
     s("path", { d: "M66 15.5 L66 28.5 L58.5 22 Z", fill: "var(--g)" }),
   ]);
-  return h("div", "ugr-belt", [h("span", "ugr-belt__lens", [h("span", "ugr-belt__pic is-off", [pic()]), h("span", "ugr-belt__pic is-lit", [pic()])])], { role: "status", "aria-label": "좌석벨트 표시등 꺼짐" });
+  return h("div", "ugr-belt", [h("span", "ugr-belt__lens", [h("span", "ugr-belt__pic is-off", [pic()]), h("span", "ugr-belt__pic is-lit", [pic()])])], { role: "status", "aria-label": "Seatbelt sign off" });
 }
 
 // 사라지기 = 하늘 전환(돔 재투영)과 같은 말투 — 흰 띠가 위에서 아래로 지나가고, 그 앞 도트(6px 칸)가 칸마다 무작위로 서서히 사라진다.
@@ -90,7 +90,7 @@ export function createGearPanel({ onGear, onWarp }) {
   // 스로틀 레일: 손잡이를 끌거나 눈금을 눌러 단을 고른다(N · 1 ~ 5, 오른쪽 두 칸 = 레드존). 채움 = 지금 속도
   const fill = h("span", "ugr-fill"), thumb = h("span", "ufo-mono ugr-thumb", ["N"]);
   const track = h("div", "ugr-track", [h("span", "ugr-redrail"), fill, ...GEAR_BETA.map((v, i) => { const d = h("span", "ugr-det"); d.style.left = i * 20 + "%"; return d; }), thumb],
-    { role: "slider", tabindex: "0", "aria-label": "성간 이동 기어(N, 1 ~ 5단 · 4 · 5단은 레드존)", "aria-valuemin": "0", "aria-valuemax": "5", "aria-valuenow": "0" });
+    { role: "slider", tabindex: "0", "aria-label": "Interstellar gear (N, 1-5; 4-5 red zone)", "aria-valuemin": "0", "aria-valuemax": "5", "aria-valuenow": "0" });
   const labels = h("div", "ufo-mono ugr-labels", GEAR_BETA.map((v, i) => h("span", i >= 4 ? "is-red" : "", [i ? String(i) : "N"])));
   let locked = false, dragging = false;
   const gearAt = (e) => { const r = track.getBoundingClientRect(); return Math.round(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * 5); };
@@ -106,7 +106,7 @@ export function createGearPanel({ onGear, onWarp }) {
   });
   const card = h("div", "ugr-card", [h("div", "ufo-scan"), top, track, labels]);
   // 테두리 · 주사선 · 스캔라인 · 등장 연출은 조작 패널과 같은 홀로그램 카드 틀(bgpanel.js holoParts)
-  const root = h("div", "ufo-gear ufo-holo", holoParts(card), { role: "group", "aria-label": "성간 이동 기어", "aria-hidden": "true" });
+  const root = h("div", "ufo-gear ufo-holo", holoParts(card), { role: "group", "aria-label": "Interstellar gear", "aria-hidden": "true" });
   const wline = h("span", "ugr-wline");
   root.append(wline);
   root.hidden = true; root.inert = true;
@@ -114,9 +114,9 @@ export function createGearPanel({ onGear, onWarp }) {
 
   // (11-09 해금) 워프 목적지 고르기 — WARP 를 누르면 기어 패널 위에 홀로그램 카드로 뜬다. 고르지 않거나 취소 · 바깥 누르기 = 아무 일도 없음.
   const chList = h("div", "ugc-list");
-  const chCancel = h("button", "ufo-mono ugc-cancel", ["취소"], { type: "button" });
-  const chCard = h("div", "ugc-card", [h("div", "ufo-scan"), h("div", "ufo-head", [h("div", "ufo-head__l", [h("span", "ufo-mono ufo-head__tag", ["WARP"]), h("span", "ufo-head__title", ["워프 목적지"])])]), chList, chCancel]);
-  const chooser = h("div", "ufo-chooser ufo-holo", holoParts(chCard), { role: "dialog", "aria-label": "워프 목적지" });
+  const chCancel = h("button", "ufo-mono ugc-cancel", ["CANCEL"], { type: "button" });
+  const chCard = h("div", "ugc-card", [h("div", "ufo-scan"), h("div", "ufo-head", [h("div", "ufo-head__l", [h("span", "ufo-mono ufo-head__tag", ["WARP"]), h("span", "ufo-head__title", ["DESTINATION"])])]), chList, chCancel]);
+  const chooser = h("div", "ufo-chooser ufo-holo", holoParts(chCard), { role: "dialog", "aria-label": "Warp destination" });
   const chScrim = h("div", "ufo-chooser-scrim");
   chooser.hidden = chScrim.hidden = true;
   document.body.append(chScrim, chooser);
@@ -134,7 +134,7 @@ export function createGearPanel({ onGear, onWarp }) {
     /** 워프 목적지 고르기 창 — items = bgunlock.chooserItems 결과, onPick(key) = 고름(창은 닫힌다). 지금 있는 곳(here)은 누를 수 없다 */
     openChooser(items, onPick) {
       chList.replaceChildren(...items.map((it) => {
-        const b = h("button", "ugc-item" + (it.here ? " is-here" : ""), [h("span", "ugc-name", [it.name]), ...(it.here ? [h("span", "ufo-chip", ["지금 여기"])] : it.signal ? [h("span", "ufo-chip ugc-signal", ["새 신호"])] : [])], { type: "button" });
+        const b = h("button", "ugc-item" + (it.here ? " is-here" : ""), [h("span", "ugc-name", [it.name]), ...(it.here ? [h("span", "ufo-chip", ["HERE"])] : it.signal ? [h("span", "ufo-chip ugc-signal", ["NEW SIGNAL"])] : [])], { type: "button" });
         if (it.here) b.disabled = true;
         b.addEventListener("click", () => { const fn = chPick; closeChooser(); if (fn) fn(it.key); });
         return b;
@@ -176,13 +176,13 @@ export function createGearPanel({ onGear, onWarp }) {
       const ST = { go: "ACCEL", accel: "ACCEL", decel: "DECEL", redAccel: "REDLINE", redDecel: "BRAKE!", idle: st.gear === 0 ? "IDLE" : red ? "CRUISE·RED" : "CRUISE" };
       const ready = !jumping && !loading && warpReady(st);
       const phase = loading ? "loading" : ready ? "ready" : st.gear === 5 && st.beta >= 0.98 ? "preparing" : st.gear === 5 ? "accelerating" : "";
-      const phaseText = { loading: "목적지 준비", ready: "출발 가능", preparing: "워프 준비", accelerating: "가속 중" };
+      const phaseText = { loading: "DEST LOADING", ready: "READY", preparing: "WARP PREP", accelerating: "ACCEL" };
       const text = jumping ? "JUMP" : phaseText[phase] || (moving && st.stage !== st.gear ? `${ST[st.mode]} ${gl(st.stage)}›${gl(st.gear)}` : ST[st.mode]);
       set("chip", text, (v) => { chip.textContent = v; });
       set("chipTone", jumping || red || st.mode.startsWith("red") ? "red" : st.mode === "idle" ? "idle" : "go", (v) => { chip.dataset.tone = v; });
       set("tgt", moving && st.stage !== st.gear, (v) => thumb.classList.toggle("is-tgt", v));
       set("lock", jumping, (v) => track.classList.toggle("is-locked", v));
-      set("belt", st.belt, (v) => { belt.dataset.state = v; belt.setAttribute("aria-label", v === "off" ? "좌석벨트 표시등 꺼짐" : "좌석벨트를 매 주세요"); });
+      set("belt", st.belt, (v) => { belt.dataset.state = v; belt.setAttribute("aria-label", v === "off" ? "Seatbelt sign off" : "Fasten seatbelt"); });
       set("phase", jumping ? "" : phase, (v) => { root.dataset.warpPhase = v; });
       set("warp", ready, (v) => { warp.disabled = !v; });
     },

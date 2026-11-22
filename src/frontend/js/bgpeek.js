@@ -19,6 +19,12 @@ const RETURN_MS = 620;    // 돌아오는 움직임(css --bgp-in 520ms + 레인 
 
 let catcher = null;
 let back = null;
+// (bg-dome-mgcyan) UFO 돔 테마는 화면 글을 영어로 — 생일 · 기본 테마의 배경 보기는 그대로 한글
+function backLabel() {
+  const dome = bgTheme() === "dome";
+  document.documentElement.classList.toggle("ufo-ui", dome);   // css/bgpanel.css 의 UFO 버튼 모양
+  if (back) back.textContent = dome ? "‹ BOARD" : "‹ 예고보드";
+}
 let peeking = false;
 let unlockT = 0;
 let touch = null;
@@ -200,7 +206,7 @@ export function initBgPeek() {
   back = document.createElement("button");
   back.type = "button";
   back.className = "bgp-exit";
-  back.textContent = "‹ 예고보드";
+  backLabel();
   back.hidden = true;
   back.addEventListener("click", show);
   document.body.append(catcher, back);
@@ -224,6 +230,7 @@ export function initBgPeek() {
   if (PHONE.matches && !cueSeen()) cueT = setTimeout(showCue, CUE_SHOW_MS);
 
   const syncTheme = () => {
+    backLabel();
     cancelTouch();
     clearTimeout(cueT);
     if (canPeek()) { cueT = setTimeout(showCue, CUE_SHOW_MS); return; }

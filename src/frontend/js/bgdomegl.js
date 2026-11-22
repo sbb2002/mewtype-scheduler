@@ -1434,7 +1434,7 @@ export function createDomeGL(host, isPaused) {
     deepLoading.set(i, p);
     return p;
   }
-  const DEEP_FAIL_MSG = "목적지 사진을 받지 못했어요 · 다시 시도해 주세요";
+  const DEEP_FAIL_MSG = "DEST IMAGE NOT RECEIVED · RETRY";
   function setDeep(i) { if (i < 0) { deepIdx = -1; spaceTex.deep = null; } else if (deepTex.has(i)) { deepIdx = i; spaceTex.deep = deepTex.get(i); } }
 
   // 우주 바탕의 방향(돌림 행렬, 열 우선 3×3 — uSpaceRot). (11-06 운영자 「N 이나 워프 뒤 늘 같은 풍경은 어색」)
@@ -1495,15 +1495,15 @@ export function createDomeGL(host, isPaused) {
   })();
   function persistUnlock() { saveUnlock(store, unlockS); applyLocks(); }
   function applyLocks() {
-    ufoPanel.setLocked("space", !unlocked(unlockS, "space"), "「구름 속 토성을 찾아봐」");
-    ufoPanel.setLocked("earth", !unlocked(unlockS, "earth"), "「우주에서 귀환 신호 수신 중」");
+    ufoPanel.setLocked("space", !unlocked(unlockS, "space"), "FIND SATURN IN THE CLOUDS");
+    ufoPanel.setLocked("earth", !unlocked(unlockS, "earth"), "RETURN SIGNAL INBOUND");
     ufoPanel.setHoldable(unlocked(unlockS, "hold"));
   }
   applyLocks();
   if (unlocked(unlockS, "hold") && !unlockS.seen.holdNotice) ufoPanel.mark("space", true);   // (시나리오) 길게 누르기를 열고 아직 안 써 본 기기 — 칸 빛남 + 시연(옛 nudge 대신)
   /** 지금 있는 곳 — "earth" 바깥 · "pink" 버츄얼 스페이스 · "space" 기본 우주(사진 없음) · 딥필드 키 · "moon" */
   const placeKey = () => (outdoor ? "earth" : INDOOR_BG !== "space" ? "pink" : keyOfIdx(deepIdx) || "space");
-  const PLACE_NAME = { earth: "지구", pink: "버츄얼 스페이스", space: "기본 우주" };
+  const PLACE_NAME = { earth: "EARTH", pink: "VIRTUAL SPACE", space: "OPEN SPACE" };
   const placeName = (k) => PLACE_NAME[k] || placeInfo(k)?.name || "";
 
   // ── 시선 HUD(해금 2단계, bghud.js · 디자인 = F5 시안) ─────────────────────────────
@@ -1604,9 +1604,9 @@ export function createDomeGL(host, isPaused) {
     if (!set) {
       const y0 = yaw / DEG;
       let list;
-      if (place === "pink") list = [{ id: "saturn", n: "토성 표식", unlock: "space", draw: "saturn", col: "232,197,138", tol: 6, d: dirFromAzAlt(y0 + 22, 24) }];
+      if (place === "pink") list = [{ id: "saturn", n: "SATURN MARK", unlock: "space", draw: "saturn", col: "232,197,138", tol: 6, d: dirFromAzAlt(y0 + 22, 24) }];
       else if (place === "space") {
-        list = [{ id: "neb", n: "성운", unlock: "hold", draw: "neb", col: "255,111,181", tol: 5, d: dirFromAzAlt(y0 + 32, 22) }];
+        list = [{ id: "neb", n: "NEBULA", unlock: "hold", draw: "neb", col: "255,111,181", tol: 5, d: dirFromAzAlt(y0 + 32, 22) }];
         ZODIAC.forEach((z, i) => {
           const az = y0 + 95 + i * 55, alt = 24 + (i % 2) * 14;
           list.push({ id: z.id, n: z.n, zod: true, who: z.who, key: z.key, draw: "zod", col: "79,227,255", tol: 8, d: dirFromAzAlt(az, alt), S: z.S.map(([dh, da]) => dirFromAzAlt(az + dh, alt + da)), lines: z.L });
@@ -1650,9 +1650,9 @@ export function createDomeGL(host, isPaused) {
     try {
       const player = await import("./player.js");
       if (!life.signal.aborted && !await player.playRecommendedSong(id) && !musicRim.music.on) {
-        ufoPanel.toast("플레이어에서 곡을 다시 골라 주세요.");
+        ufoPanel.toast("RESELECT TRACK IN PLAYER");
       }
-    } catch { if (!life.signal.aborted) ufoPanel.toast("플레이어를 열지 못했어요."); }
+    } catch { if (!life.signal.aborted) ufoPanel.toast("PLAYER UNAVAILABLE"); }
     finally { requestingSong = false; }
   }, { signal: life.signal });
   const musicRim = createMusicRim(memberHex, life.signal);   // (시나리오) 음악 테두리 · 별자리 힌트(bgmusic.js) — 색은 타임테이블 점 색(memberHex)
@@ -1888,8 +1888,8 @@ export function createDomeGL(host, isPaused) {
         if (star.dest === "space") delete hudSets.space;   // 기본 우주로 돌아오면 못 찾은 대상을 지금 시선 기준으로 다시 놓는다
         setDeep(star.nextDeep);
         const got = arrive(unlockS, star.dest);   // (11-09 해금) 처음 간 딥필드 = 워프 목적지에 추가, 다섯 곳 뒤 달 궤도 = 해금
-        if (got === "moon") { persistUnlock(); ufoPanel.toast("달 궤도 도착 — 워프 목적지에 추가"); sound.unlock(); }
-        else if (star.dest !== "space" && !unlockS.vis.includes(star.dest) && star.dest !== "moon") ufoPanel.toast(`${placeInfo(star.dest).name} 도착 · 사진 속 표식을 찾아보세요`);
+        if (got === "moon") { persistUnlock(); ufoPanel.toast("LUNAR ORBIT REACHED · ADDED TO WARP"); sound.unlock(); }
+        else if (star.dest !== "space" && !unlockS.vis.includes(star.dest) && star.dest !== "moon") ufoPanel.toast(`${placeInfo(star.dest).name} REACHED · FIND THE MARK`);
       }
       const c = jumpCenter(), maxR = Math.hypot(Math.max(c[0], W - c[0]), Math.max(c[1], H - c[1])) + 40;
       star.frame = { ...jumpFrame(star.jump.kind, t, maxR), c, maxR };
@@ -2610,10 +2610,10 @@ export function createDomeGL(host, isPaused) {
       ufoPanel.setCurrent(outdoor ? "earth" : INDOOR_BG === "space" ? "space" : "pink");   // 바뀔 때만 DOM 을 건드린다(bgpanel.js)
       // 우주 사진은 처음 고를 때 받는다 — 받는 동안 칸에 표시(그려 만든 우주 모드는 사진이 없다)
       const loading = spacePreload || (INDOOR_BG === "space" && !outdoor && SPACE_MODE !== "shader" && !spaceTex.map);
-      if (!star) ufoPanel.setChip("space", loading ? "불러오는 중…" : unlocked(unlockS, "hold") ? "길게 눌러 성간 이동" : "");   // 성간 이동 중엔 「성간 이동 중」(bgpanel setWarping). 해금 전엔 칩 없음
+      if (!star) ufoPanel.setChip("space", loading ? "LOADING…" : unlocked(unlockS, "hold") ? "HOLD TO JUMP" : "");   // 성간 이동 중엔 「성간 이동 중」(bgpanel setWarping). 해금 전엔 칩 없음
       ufoPanel.setLight(unlocked(unlockS, "light") ? !unlockS.seen.lightOff : null);
       const here = placeKey();
-      ufoPanel.setFreeNav(unlocked(unlockS, "freenav") ? [{ key: "space", name: "기본 우주", here: here === "space" }, ...unlockS.vis.map((k) => ({ key: k, name: placeName(k), here: here === k })), ...(unlocked(unlockS, "moon") ? [{ key: "moon", name: placeName("moon"), here: here === "moon" }] : [])] : null);   // (해금) 길게 누르기가 열린 뒤 처음 몇 번 — 패널이 뜰 때 칸이 반짝여 알려 준다
+      ufoPanel.setFreeNav(unlocked(unlockS, "freenav") ? [{ key: "space", name: "OPEN SPACE", here: here === "space" }, ...unlockS.vis.map((k) => ({ key: k, name: placeName(k), here: here === k })), ...(unlocked(unlockS, "moon") ? [{ key: "moon", name: placeName("moon"), here: here === "moon" }] : [])] : null);   // (해금) 길게 누르기가 열린 뒤 처음 몇 번 — 패널이 뜰 때 칸이 반짝여 알려 준다
     }
     ufoPanel.set(want);
     document.documentElement.toggleAttribute("data-bg-panel", want && ufoPanel.on);   // bgpeek.js: 패널이 떠 있으면 바깥 누름은 패널만 닫는다
@@ -2640,7 +2640,7 @@ export function createDomeGL(host, isPaused) {
       recommended = nextSong;
       if (nextSong) {
         recommendation.textContent = "♪ " + nextSong[1];
-        recommendation.setAttribute("aria-label", "추천 곡 재생 · " + nextSong[1]);
+        recommendation.setAttribute("aria-label", "Play recommended track · " + nextSong[1]);
       }
     }
     const hideRecommendation = !(active && !star && nextSong && !musicRim.music.on);
