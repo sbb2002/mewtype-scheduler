@@ -33,12 +33,26 @@ export function formatKST(iso, opts = {}) {
 
 const DAY_MS = 86400000;
 
-// 예정 시각을 넘겨도 5분까지는 오차 범위로 보고 "곧 시작" 유지 — 그 이상 지나야 "지각" 판정.
-const LATE_GRACE_MS = 5 * 60000;
+// (v4.11.16) 예정 시각 + 10분까지는 「준비중」(노란 글자, 느린 점멸) — 그 뒤부터 「n분 지각」. 전엔 5분 유예 + 「곧 시작」(옛 카드)
+// · 유예 없음(오늘 보드)으로 둘이 달랐다. 오늘 보드(timetable.js)와 이후 예고 카드(render.js)가 이 값 하나를 쓴다.
+export const PREP_MS = 10 * 60000;
+const LATE_GRACE_MS = PREP_MS;
+
+/**
+ * (v4.11.16) 예정 시각 기준 지각 국면. "before" = 아직 전 · "prep" = 지났지만 10분 이내(준비중) · "late" = 10분 넘김(지각).
+ * @param {number} startMs
+ * @param {number} nowMs
+ * @returns {{phase: "before"|"prep"|"late", lateMin: number}} lateMin = 지난 분(내림, late 때만 의미)
+ */
+export function latePhase(startMs, nowMs = Date.now()) {
+  const over = nowMs - startMs;
+  if (!(over > 0)) return { phase: "before", lateMin: 0 };
+  return { phase: over > PREP_MS ? "late" : "prep", lateMin: Math.floor(over / 60000) };
+}
 
 /**
  * Generate relative time label for a scheduled start time (v3).
- * 지각(< −5분) → "{n}분 지각" / < 60초 → "곧 시작" / 오늘(같은 KST 날짜) → "{h}시간 {m}분 후" /
+ * 지각(> +10분) → "{n}분 지각" / 0~10분 지남 → "준비중" / < 60초 → "곧 시작" / 오늘(같은 KST 날짜) → "{h}시간 {m}분 후" /
  * 7일 이내(오늘 아님) → "D-{n} {HH}:{mm}" / 그 외 → "{YYYY}-{MM}-{DD} {HH}:{mm}"
  * @param {string} iso - ISO UTC string for scheduled_start
  * @param {number} nowMs - Current time in milliseconds (default: Date.now())
@@ -49,8 +63,9 @@ export function relativeLabel(iso, nowMs = Date.now()) {
   const nowTime = new Date(nowMs);
   const deltaMs = startTime.getTime() - nowTime.getTime();
 
-  // 지각(< −5분) → 현행 유지
+  // 지각(10분 넘김) → 「n분 지각」, (v4.11.16) 지났지만 10분 이내 → 「준비중」
   if (deltaMs < -LATE_GRACE_MS) return lateLabel(-deltaMs);
+  if (deltaMs < 0) return "준비중";
 
   // < 60초 → "곧 시작"
   if (deltaMs < 60000) return "곧 시작";
@@ -117,7 +132,7 @@ function lateLabel(overMs) {
 }
 
 /**
- * scheduled_start를 LATE_GRACE_MS(5분) 넘게 지났는지 여부 (지각 표시 스타일 토글용).
+ * scheduled_start를 LATE_GRACE_MS(10분) 넘게 지났는지 여부 (지각 표시 스타일 토글용).
  * @param {string} iso
  * @param {number} nowMs
  */

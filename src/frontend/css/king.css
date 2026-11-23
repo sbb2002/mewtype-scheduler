@@ -244,3 +244,7 @@
 @media (prefers-reduced-motion: reduce) {
   .k-on *, .k-on *::before, .k-on *::after, .k-on.tt-blk { animation: none !important; transition: none !important; }
 }
+
+/* (v4.11.16) 지각 규칙이 「10분까지 준비중(노랑 점멸) → n분 지각」 으로 바뀌어도 노노카 블록은 이스터에그 글자(행차 준비 · 대기 +mm:ss)를
+   예전처럼 노란 고정 글자로 둔다 — timetable.js 가 붙인 .is-prep 의 점멸만 끈다(도넛은 timetable.updateRing 이 노노카 카드에 .is-prep 을 안 붙임) */
+.k-blk .tt-blk__rel.is-prep { animation: none; }

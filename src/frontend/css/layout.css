@@ -509,3 +509,7 @@ body {
   0%   { transform: translate(-50%, -50%) scale(0.7); opacity: 0.95; }
   100% { transform: translate(-50%, -180px) scale(1.15); opacity: 0; }
 }
+
+/* (v4.11.16) 지각 전 「준비중」 — 예정 시각 + 10분까지 노란 글자가 느리게 점멸한다(오늘 도넛 · PC 블록 · 이후 예고 카드 공통 키프레임).
+   색 · 적용 규칙은 timetable.css(.tt-blk__rel.is-prep · .tcard__ring--up.is-prep) · card.css(.card__rel--prep) */
+@keyframes prep-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }

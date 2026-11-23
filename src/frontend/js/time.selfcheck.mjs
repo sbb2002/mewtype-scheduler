@@ -2,7 +2,7 @@
  * Self-check for time.js v3 — run with: node src/frontend/js/time.selfcheck.mjs
  */
 import assert from 'node:assert';
-import { formatKST, relativeLabel, elapsedLabel, isLate } from './time.js';
+import { formatKST, relativeLabel, elapsedLabel, isLate, latePhase } from './time.js';
 
 // 기준 시각: 2026-09-09T06:00:00Z (KST: 2026-09-09 15:00:00)
 const baseNowMs = new Date('2026-09-09T06:00:00Z').getTime();
@@ -20,11 +20,20 @@ console.log('Testing formatKST...');
   console.log('✓ formatKST passed');
 }
 
-console.log('Testing relativeLabel - 지각(< -5분)...');
+console.log('Testing relativeLabel - 지각(> +10분) · 준비중(0~10분)...');
 {
-  // 10분 지난 시점: 2026-09-09T05:50:00Z
-  const result = relativeLabel('2026-09-09T05:50:00Z', baseNowMs);
-  assert(result === '10분 지각', `Expected '10분 지각', got '${result}'`);
+  // 11분 지난 시점: 2026-09-09T05:49:00Z
+  const result = relativeLabel('2026-09-09T05:49:00Z', baseNowMs);
+  assert(result === '11분 지각', `Expected '11분 지각', got '${result}'`);
+  // (v4.11.16) 정확히 10분 · 30초 지남 → 준비중
+  assert(relativeLabel('2026-09-09T05:50:00Z', baseNowMs) === '준비중', '10분 지남 = 준비중');
+  assert(relativeLabel('2026-09-09T05:59:30Z', baseNowMs) === '준비중', '30초 지남 = 준비중');
+  const t0 = Date.parse('2026-09-09T06:00:00Z');
+  assert(latePhase(t0, t0).phase === 'before', 'latePhase 정각 = before');
+  assert(latePhase(t0, t0 + 1000).phase === 'prep', 'latePhase 1초 = prep');
+  assert(latePhase(t0, t0 + 600000).phase === 'prep', 'latePhase 10분 = prep');
+  const L = latePhase(t0, t0 + 600001 + 120000);
+  assert(L.phase === 'late' && L.lateMin === 12, 'latePhase 12분 = late 12');
 
   console.log('✓ 지각 case passed');
 }
@@ -89,7 +98,7 @@ console.log('Testing elapsedLabel...');
 console.log('Testing isLate...');
 {
   // 10분 지남 → true
-  const isLate1 = isLate('2026-09-09T05:50:00Z', baseNowMs);
+  const isLate1 = isLate('2026-09-09T05:49:00Z', baseNowMs);   // (v4.11.16) 11분 지남 = 지각(10분까지는 준비중)
   assert(isLate1 === true, `Expected true, got ${isLate1}`);
 
   // 2분 지남 (5분 이내) → false
