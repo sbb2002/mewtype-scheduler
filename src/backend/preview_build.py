@@ -298,6 +298,7 @@ def build_preview(
         # 상태 업데이트
         if tick.next_state != item["state"]:
             item = preview.set_state(item, tick.next_state, now_iso)
+        item = preview.mark_end(item, now_iso, getattr(video, "actual_end", None))   # (v4.11.16) 끝난 시각
 
         # out 이면 archive 이관, 아니면 items 에 추가 (v4a D7 — 구 none)
         if tick.next_state == "out":
@@ -336,6 +337,7 @@ def build_preview(
             transitions.extend(tick.log)
             if tick.next_state != item["state"]:
                 item = preview.set_state(item, tick.next_state, now_iso)
+            item = preview.mark_end(item, now_iso)   # (v4.11.16)
             if tick.next_state == "out":
                 gone_items.append(preview.to_archive_record(item, now_iso))
                 continue
@@ -428,6 +430,7 @@ def build_preview(
             if it["state"] not in ("live", "end"):
                 it = preview.set_state(it, "live", now_iso)
             it["actual_start"] = it.get("actual_start") or now_iso
+            it = preview.mark_end(it, now_iso)   # (v4.11.16) 다시 live — 끝난 시각 지움
         elif kind == "tunein" and it["state"] == "announced" and not it.get("scheduled_start"):
             it["scheduled_start"] = nx_item.get("scheduled_start")
         it["last_updated"] = now_iso
@@ -871,6 +874,15 @@ if __name__ == "__main__":
     item_9 = new_preview_9["items"][0]
     assert item_9["state"] == "end", f"Expected end, got {item_9['state']}"
     assert "end_vid" in wakes_9  # end 폴링 예약 (30분 윈도우)
+    assert item_9["actual_end"] == "2026-09-09T13:05:00Z", "(v4.11.16) 끝난 시각 = YouTube actualEndTime"
+    _no_end = {"end_vid": types.SimpleNamespace(**{**vars(videos_ended["end_vid"]), "actual_end": None})}
+    _p9b, _, _, _ = build_preview(channels_cfg, _no_end, prev_live, now_iso)
+    assert _p9b["items"][0]["actual_end"] == now_iso, "(v4.11.16) actualEndTime 없으면 end 로 바꾼 시각"
+    _relive = dict(item_9, state="end", state_since=now_iso)
+    _vlive = {"end_vid": types.SimpleNamespace(**{**vars(videos_ended["end_vid"]), "live_state": "live", "actual_end": None})}
+    _p9c, _, _, _ = build_preview(channels_cfg, _vlive, {**prev_live, "items": [_relive]}, now_iso)
+    assert _p9c["items"][0]["state"] == "live" and "actual_end" not in _p9c["items"][0], "(v4.11.16) 다시 live 면 끝난 시각 지움"
+    print("  (v4.11.16) actual_end — API 값 · 없으면 지금 · 다시 live 면 지움")
     print(f"  live (live_state=none) → end, check scheduled for deletion")
 
     print("\n" + "=" * 70)

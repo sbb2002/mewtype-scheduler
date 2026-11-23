@@ -94,7 +94,7 @@ export function classify(items, archiveItems, nowMs, order) {
       if (isFinite(s)) live.push({ item, start: s, end: null });
     } else if (item.state === "end") {
       const s = itemMs(item.actual_start || item.scheduled_start);
-      const e = itemMs(item.state_since);
+      const e = itemMs(item.actual_end || item.state_since);   // (v4.11.16) 끝난 시각 우선 — 없으면 end 로 바꾼 시각
       if (isFinite(s) && (!isFinite(e) || e > ds)) ended.push({ item, start: s, end: isFinite(e) ? e : null });
     } else if (item.state === "announced" || item.state === "upcoming" || item.state === "watching") {
       const s = itemMs(item.scheduled_start);
@@ -106,7 +106,7 @@ export function classify(items, archiveItems, nowMs, order) {
   for (const item of archiveItems || []) {
     if (!ok(item) || (item.video_id && seen.has(item.video_id))) continue;
     const a = itemMs(item.actual_start);
-    const e = itemMs(item.archived_at);
+    const e = itemMs(item.actual_end || item.archived_at);   // (v4.11.16) 보관 시각은 end 창 30분 뒤라 길이가 길게 나왔다
     if (!isFinite(a) || !isFinite(e) || a < ds || e > nowMs) continue;
     if (e - a < LATE_ENDED_MIN || e - a > LATE_ENDED_MAX) continue;
     ended.push({ item, start: a, end: e });
@@ -160,7 +160,7 @@ export function planLater(items, archiveItems, nowMs, order) {
       if (isFinite(s)) place(mk(item, s, null, "live"), false);
     } else if (item.state === "end") {
       const s = itemMs(item.actual_start || item.scheduled_start);
-      const e = itemMs(item.state_since);
+      const e = itemMs(item.actual_end || item.state_since);   // (v4.11.16) 끝난 시각 우선 — 없으면 end 로 바꾼 시각
       if (isFinite(s)) place(mk(item, s, isFinite(e) ? e : null, "ended"), false);
     } else if (item.state === "announced" || item.state === "upcoming" || item.state === "watching") {
       const s = itemMs(item.scheduled_start);
@@ -171,7 +171,7 @@ export function planLater(items, archiveItems, nowMs, order) {
   // 보관함 — 같은 video_id 가 preview 에 있으면 건너뛴다 (classify 와 같은 규칙, 범위만 이번주)
   for (const item of archiveItems || []) {
     if (!ok(item) || (item.video_id && seen.has(item.video_id))) continue;
-    const a = itemMs(item.actual_start), e = itemMs(item.archived_at);
+    const a = itemMs(item.actual_start), e = itemMs(item.actual_end || item.archived_at);   // (v4.11.16)
     if (!isFinite(a) || !isFinite(e) || e > nowMs) continue;
     if (e - a < LATE_ENDED_MIN || e - a > LATE_ENDED_MAX) continue;
     place(mk(item, a, e, "ended"), false);

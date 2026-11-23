@@ -714,6 +714,7 @@ def build_item_from_video(info, *, channel_key: str, host: str | None,
     tick = statemachine.derive(item, now_iso, live_seen=(info.live_state == "live"))
     if tick.next_state != item["state"]:
         item = preview.set_state(item, tick.next_state, now_iso)
+    item = preview.mark_end(item, now_iso, getattr(info, "actual_end", None))   # (v4.11.16) 끝난 시각
 
     return item, tick.next_check_at
 
