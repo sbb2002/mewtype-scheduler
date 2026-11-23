@@ -1146,7 +1146,8 @@ function paintNext() {
   if (!built) return;
   const { rows } = upNext();
   const blankRow = (first) => h("div", { class: "mp-next__row is-blank" + (first ? " is-first" : "") },
-    h("span", { class: "mp-next__lab", text: "·" }), h("span", { class: "mp-next__t", text: "—" }));
+    h("span", { class: "mp-next__lab", text: "·" }), h("span", { class: "mp-next__t", text: "—" }), first ? h("span", { class: "mp-next__m" }) : null);
+  // (v4.11.16) 첫 줄은 언제나 보조 줄 자리를 둔다(비어 있어도) — 첫 입장 안내(보조 없음)와 곡(멤버 · 종류 줄)의 칸 높이가 달랐다
   el.next.replaceChildren(
     ...rows.map((row, k) => {
       const first = k === 0;
@@ -1169,7 +1170,7 @@ function paintNext() {
         return h("div", { class: cls + " is-note" },
           h("span", { class: "mp-next__lab", text: first ? "끝" : "·" }),
           h("span", { class: "mp-next__t", text: row.text }),
-          row.sub ? h("span", { class: "mp-next__m", text: row.sub }) : null);
+          row.sub || first ? h("span", { class: "mp-next__m", text: row.sub || "" }) : null);
       }
       return blankRow(first);
     }),

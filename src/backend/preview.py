@@ -409,6 +409,22 @@ def cancel_expired(item: dict, now_iso: str) -> bool:
     return now_iso >= until
 
 
+def mark_end(item: dict, now_iso: str, api_end=None) -> dict:
+    """(v4.11.16) 방송이 끝난 시각 `actual_end` 를 붙인다 — 프론트가 방송 길이를 잴 때 쓴다(SPEC 계약 A).
+    end · out 이면 YouTube actualEndTime(api_end) → 이미 있는 값 → 지금 순으로. 다시 live 가 되면 지운다.
+    전엔 이 값이 없어 프론트가 「end 로 바꾼 시각(state_since)」 · 「보관 시각(archived_at, end 창 30분 뒤)」으로 재서 길게 보였다."""
+    st = item.get("state")
+    if st in ("end", "out") and item.get("actual_start"):   # 시작을 모르는 예고(방송 안 됨)엔 붙이지 않는다
+        end = api_end or item.get("actual_end") or now_iso
+        if item.get("actual_end") != end:
+            item = dict(item)
+            item["actual_end"] = end
+    elif st == "live" and item.get("actual_end"):
+        item = dict(item)
+        item.pop("actual_end", None)
+    return item
+
+
 def to_archive_record(item: dict, now_iso: str) -> dict:
     """
     Convert an item to an archive record.
@@ -645,6 +661,14 @@ if __name__ == "__main__":
     assert archived["state"] == "end", "state 변경됨"
     assert archived["id"] == "pv_archived", "id 변경됨"
     print(f"✓ to_archive_record: {archived['id']}")
+    # (v4.11.16) mark_end — 시작을 모르는 예고엔 안 붙임 · 있는 값 유지 · API 값 우선
+    assert "actual_end" not in mark_end({"state": "out"}, now)
+    _e = mark_end({"state": "end", "actual_start": "2026-09-09T10:00:00Z"}, now)
+    assert _e["actual_end"] == now
+    assert mark_end(dict(_e, state="out"), "2026-09-09T13:00:00Z")["actual_end"] == now
+    assert mark_end(_e, now, "2026-09-09T11:50:00Z")["actual_end"] == "2026-09-09T11:50:00Z"
+    assert "actual_end" not in mark_end(dict(_e, state="live"), now)
+    print("✓ (v4.11.16) mark_end")
 
     # Test 12: expires_at 계산 — 공개 3h
     item_public = make_item(

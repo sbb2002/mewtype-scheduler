@@ -173,6 +173,10 @@
   font-weight: 600;
 }
 
+/* (v4.11.16) 예정 시각 + 10분까지 「준비중」 — 노란 글자, 느린 점멸(키프레임 layout.css prep-blink) */
+.card__rel.card__rel--prep { color: var(--color-late, #e0a030); font-weight: 600; animation: prep-blink 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .card__rel.card__rel--prep { animation: none; } }
+
 /* 썸네일 자리 아이콘 (announced 📺 / membership 🔒) */
 .card__icon {
   font-size: 3rem;

@@ -219,6 +219,7 @@ function createCardBase(item, nowMs, channelData, laneKey) {
       rel.textContent = item.assumed_live
         ? "방송 중 (추정)"
         : relativeLabel(item.scheduled_start, nowMs);
+      rel.classList.toggle("card__rel--prep", rel.textContent === "준비중");   // (v4.11.16)
       meta.appendChild(rel);
     } else {
       const rel = document.createElement("span");
@@ -352,10 +353,12 @@ function createCardBase(item, nowMs, channelData, laneKey) {
   } else if (isWatching) {
     // watching 도 relativeLabel 사용 (대기 중 배지가 상태 표시)
     relSpan.textContent = relativeLabel(item.scheduled_start, nowMs);
+    relSpan.classList.toggle("card__rel--prep", relSpan.textContent === "준비중");   // (v4.11.16) 예정 + 10분까지 노란 점멸
     relSpan.classList.toggle("card__rel--late", isLate(item.scheduled_start, nowMs));
   } else if (item.scheduled_start) {
     // upcoming/announced
     relSpan.textContent = relativeLabel(item.scheduled_start, nowMs);
+    relSpan.classList.toggle("card__rel--prep", relSpan.textContent === "준비중");   // (v4.11.16) 예정 + 10분까지 노란 점멸
     if (item.state === "upcoming") {
       relSpan.classList.toggle("card__rel--late", isLate(item.scheduled_start, nowMs));
     }
@@ -1022,6 +1025,7 @@ export function updateCountdowns(boardEl, nowMs = Date.now()) {
     } else {
       // announced/upcoming/watching
       relSpan.textContent = relativeLabel(timeEl.dateTime, nowMs);
+      relSpan.classList.toggle("card__rel--prep", relSpan.textContent === "준비중");   // (v4.11.16) 예정 + 10분까지 노란 점멸
       // announced 는 late 토글 스킵, upcoming/watching 은 토글
       if (!cardEl.classList.contains("card--announced")) {
         relSpan.classList.toggle("card__rel--late", isLate(timeEl.dateTime, nowMs));

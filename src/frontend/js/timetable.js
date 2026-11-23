@@ -14,7 +14,7 @@
 //  applyTimetableMarquees(boardEl)     → 블록 제목이 넘치면 한 줄 무한 흐름
 //  closeCardPop()                      → 블록 카드 팝업 닫기
 
-import { formatKST } from "./time.js";
+import { formatKST, latePhase } from "./time.js";
 import { KING_KEY, KING_RING_LATE, decorateBlock, decoratePopup, decorateCard } from "./king.js";   // (v4.3.1) 노노카 지각 이스터에그
 import { markCopy } from "./longcopy.js";   // (v4.11.5) 길게 눌러 주소 복사
 import { MEMBER_DOT_COLORS } from "./config.js";   // (v4.11.7) 이후 예고 점의 멤버 색(어둡게 · 밝게)
@@ -56,6 +56,10 @@ function mdw(ms) {
 const ymd = (ms) => _ymd.format(new Date(ms));
 /* 예고 블록 2번째 줄 — 카드 도넛 타이머와 같은 규칙(60분 미만 = 분 정수 · 이상 = 시간, 소수 한 자리 · 정각이면 정수) */
 const startsIn = (min) => `방송시작까지 ${min < 60 ? `${min}분` : `${(min / 60).toFixed(min % 60 ? 1 : 0)}시간`}`;
+/* (v4.11.16) PC 블록의 지각 글자 — 「12분 지각」 · 「1시간 5분 지각」 (time.js 의 이후 예고 카드 문구와 같은 형식) */
+function lateText(min) {
+  return min < 60 ? `${min}분 지각` : `${Math.floor(min / 60)}시간${min % 60 ? ` ${min % 60}분` : ""} 지각`;
+}
 function durLabel(ms) {
   const m = Math.round(ms / 60000);
   return m < 60 ? `${m}분` : `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 60}분` : ""}`;
@@ -94,7 +98,7 @@ export function classify(items, archiveItems, nowMs, order) {
       if (isFinite(s)) live.push({ item, start: s, end: null });
     } else if (item.state === "end") {
       const s = itemMs(item.actual_start || item.scheduled_start);
-      const e = itemMs(item.state_since);
+      const e = itemMs(item.actual_end || item.state_since);   // (v4.11.16) 끝난 시각 우선 — 없으면 end 로 바꾼 시각
       if (isFinite(s) && (!isFinite(e) || e > ds)) ended.push({ item, start: s, end: isFinite(e) ? e : null });
     } else if (item.state === "announced" || item.state === "upcoming" || item.state === "watching") {
       const s = itemMs(item.scheduled_start);
@@ -106,7 +110,7 @@ export function classify(items, archiveItems, nowMs, order) {
   for (const item of archiveItems || []) {
     if (!ok(item) || (item.video_id && seen.has(item.video_id))) continue;
     const a = itemMs(item.actual_start);
-    const e = itemMs(item.archived_at);
+    const e = itemMs(item.actual_end || item.archived_at);   // (v4.11.16) 보관 시각은 end 창 30분 뒤라 길이가 길게 나왔다
     if (!isFinite(a) || !isFinite(e) || a < ds || e > nowMs) continue;
     if (e - a < LATE_ENDED_MIN || e - a > LATE_ENDED_MAX) continue;
     ended.push({ item, start: a, end: e });
@@ -160,7 +164,7 @@ export function planLater(items, archiveItems, nowMs, order) {
       if (isFinite(s)) place(mk(item, s, null, "live"), false);
     } else if (item.state === "end") {
       const s = itemMs(item.actual_start || item.scheduled_start);
-      const e = itemMs(item.state_since);
+      const e = itemMs(item.actual_end || item.state_since);   // (v4.11.16) 끝난 시각 우선 — 없으면 end 로 바꾼 시각
       if (isFinite(s)) place(mk(item, s, isFinite(e) ? e : null, "ended"), false);
     } else if (item.state === "announced" || item.state === "upcoming" || item.state === "watching") {
       const s = itemMs(item.scheduled_start);
@@ -171,7 +175,7 @@ export function planLater(items, archiveItems, nowMs, order) {
   // 보관함 — 같은 video_id 가 preview 에 있으면 건너뛴다 (classify 와 같은 규칙, 범위만 이번주)
   for (const item of archiveItems || []) {
     if (!ok(item) || (item.video_id && seen.has(item.video_id))) continue;
-    const a = itemMs(item.actual_start), e = itemMs(item.archived_at);
+    const a = itemMs(item.actual_start), e = itemMs(item.actual_end || item.archived_at);   // (v4.11.16)
     if (!isFinite(a) || !isFinite(e) || e > nowMs) continue;
     if (e - a < LATE_ENDED_MIN || e - a > LATE_ENDED_MAX) continue;
     place(mk(item, a, e, "ended"), false);
@@ -470,8 +474,10 @@ function blockEl(entry, state, ctx, geo, rowKey) {
     tx.appendChild(el("div", "tt-blk__rel tt-blk__rel--cx", "✕ 취소됨"));
   } else if (state === "upcoming") {   // 2번째 줄 (king.js 가 「지각」 자리로 쓴다). 라이브 · 종료 블록은 빈 줄(.tt-blk__sp)로 제목 높이를 맞춘다
     const min = Math.max(0, Math.round((entry.start - ctx.nowMs) / 60000));
-    const late = entry.start < ctx.nowMs;
-    tx.appendChild(el("div", "tt-blk__rel" + (late ? " is-late" : ""), late ? "지각" : startsIn(min)));
+    // (v4.11.16) 예정 + 10분까지 「준비중」(노랑 점멸) → 그 뒤 「n분 지각」. 전엔 지나자마자 「지각」. 노노카 블록은 king.js 가 글자를 덮어쓴다
+    const lp = latePhase(entry.start, ctx.nowMs);
+    const txt = lp.phase === "late" ? lateText(lp.lateMin) : lp.phase === "prep" ? "준비중" : startsIn(min);
+    tx.appendChild(el("div", "tt-blk__rel" + (lp.phase === "late" ? " is-late" : lp.phase === "prep" ? " is-prep" : ""), txt));
   } else tx.appendChild(el("div", "tt-blk__sp"));
   const n = el("div", "tt-blk__n");
   const trk = el("span", "tt-blk__trk");
@@ -931,7 +937,7 @@ function ringPct(startMs, nowMs) {
   return Math.max(0, Math.min(100, Math.round((1 - (startMs - nowMs) / DAY_MS) * 100)));
 }
 /* 예정 링: 1시간 넘게 남으면 24시간 기준으로 차오른다(레인 색). (v4.5.8) 1시간 이내는 분 단위 — 가득 찬 노랑 링이 남은 분에 맞춰
-   12시부터 시계방향으로 비워져 0분에 빈 링(.is-min, --p = 남은 비율). 시작 시각이 지나면 빈 링 + 「지각」(.is-late).
+   12시부터 시계방향으로 비워져 0분에 빈 링(.is-min, --p = 남은 비율). 시작 시각이 지나면 빈 링 — (v4.11.16) 10분까지 「준비중」(.is-prep, 노랑 점멸), 그 뒤 「n분 / 지각」(.is-late).
    노노카 지각 이스터에그가 붙은 카드(data-king)는 「지각」 대신 king.js 의 KING_RING_LATE. */
 function updateRing(card, nowMs) {
   const start = Number(card.dataset.start);
@@ -940,13 +946,15 @@ function updateRing(card, nowMs) {
   const left = start - nowMs;
   const min = Math.max(0, Math.round(left / 60000));
   const late = left < 0;
+  const lp = latePhase(start, nowMs);   // (v4.11.16) 지난 뒤 10분까지 = prep(「준비중」 노랑 점멸), 그 뒤 = late(「n분 / 지각」)
   const minute = !late && left <= HOUR_MS;
   ring.classList.toggle("is-min", minute);
   ring.classList.toggle("is-late", late);
+  ring.classList.toggle("is-prep", lp.phase === "prep" && !card.dataset.king);
   ring.style.setProperty("--p", late ? "0" : minute ? ((left / HOUR_MS) * 100).toFixed(2) : String(ringPct(start, nowMs)));
   ring.style.setProperty("--rc", minute ? "var(--color-late)" : "var(--lane-color, var(--color-sched))");
   const b = ring.querySelector("b"), sm = ring.querySelector("small");   // 방송 중 링과 같은 2단: 「n시간 / 시작까지」(1시간 이내는 「n분」), 지나면 「지각」
-  const [lateB, lateS] = card.dataset.king ? KING_RING_LATE : ["지각", ""];
+  const [lateB, lateS] = card.dataset.king ? KING_RING_LATE : lp.phase === "prep" ? ["준비중", ""] : [`${lp.lateMin}분`, "지각"];   // 노노카 카드는 이스터에그 글자 그대로
   b.textContent = late ? lateB : minute ? `${min}분` : `${Math.floor(min / 60)}시간`;
   sm.textContent = late ? lateS : "시작까지";
   card.classList.toggle("tcard--soon", !late && left < SOON_MS);

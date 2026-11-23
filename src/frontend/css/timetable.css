@@ -334,6 +334,8 @@
 .tt-blk__rel, .tt-blk__sp { height: 15px; line-height: 15px; font-size: 0.68rem; white-space: nowrap; }
 .tt-blk__rel { color: var(--color-text-muted); }
 .tt-blk--soon .tt-blk__rel, .tt-blk__rel.is-late { color: var(--color-late); }
+/* (v4.11.16) 예정 시각 + 10분까지 「준비중」 — 노란 글자, 느린 점멸(layout.css prep-blink). 도넛은 아래 .tcard__ring--up.is-prep */
+.tt-blk__rel.is-prep { color: var(--color-late); font-weight: 600; animation: prep-blink 2.4s ease-in-out infinite; }
 /* 제목: 한 줄. 넘치면 무한 marquee (timetable.js applyTimetableMarquees 가 is-marquee 를 켠다) */
 .tt-blk__n {
   overflow: hidden;
@@ -741,6 +743,10 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 /* (v4.5.8) 예정 링 1시간 이내: 12시부터 시계방향으로 빈칸이 늘어나 0분에 빈 링(--p = 남은 비율, 방송 중 링의 「비우기」와 같은 방향) */
 .tcard__ring--up.is-min { background: conic-gradient(var(--color-ring-track) calc((100 - var(--p, 0)) * 1%), var(--rc, var(--color-late)) 0); }
 .tcard__ring--up.is-late b { color: var(--color-late); }   /* 시작 시각 지남 = 빈 링 + 노랑 글자 */
+.tcard__ring--up.is-late small { color: var(--color-late); }   /* (v4.11.16) 「n분 / 지각」 아래 줄도 노랑 */
+.tcard__ring--up.is-prep b { font-size: 0.62rem; letter-spacing: -0.02em; animation: prep-blink 2.4s ease-in-out infinite; }   /* (v4.11.16) 「준비중」 — 3글자라 한 단계 작게 */
+.tcard--big .tcard__ring--up.is-prep b { font-size: 0.7rem; }
+@media (prefers-reduced-motion: reduce) { .tt-blk__rel.is-prep, .tcard__ring--up.is-prep b { animation: none; } }
 .tcard__ring--live { --rcol: var(--color-live); }
 .tcard__ring--ended { --rcol: #8a8a8a; }            /* 종료 = 끝난 순간에 멈춘 회색 링 */
 .tcard--ended .tcard__ring b { color: var(--color-ended); }
