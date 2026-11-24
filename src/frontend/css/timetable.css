@@ -625,9 +625,21 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
   align-items: start;
 }
 .board--cards .lane { container-type: inline-size; min-width: 0; }
+/* (v4.11.18) 칸 격자 — 카드 · 빈 칸이 모두 카드 한 장 높이(--ch), 칸 사이 --slot-gap. 내일 구분선은 칸을 차지하지 않고 첫 내일 칸 위 간격 안에 뜬다.
+   그래서 N번째 칸이 5레인 모두 같은 높이에 온다(전엔 구분선 17px · 낮은 안내 상자 61px 때문에 레인마다 어긋났다) */
+.cards-board { --slot-gap: 26px; }
+.cards-board .tt-today__stack, .cards-board .tt-today__tmr { gap: var(--slot-gap); }
+.cards-board .tt-today__tmr { position: relative; }
+.cards-board .tt-today__stack > *, .cards-board .tt-today__tmr > .tcard { flex: none; }
+/* 칸이 넘쳐 스크롤 막대가 생긴 레인만 카드 폭이 좁아져(썸네일 16:9 라 높이도 182 → 176px) 줄이 어긋났다 —
+   스크롤 막대 자리를 모든 레인에 늘 비워 두고, 빈 칸 높이도 실제 카드 폭(.tt-today__stack 컨테이너)으로 계산한다 */
+.cards-board .tt-today { scrollbar-gutter: stable; }
+.cards-board .tt-today__stack { container-type: inline-size; }
+.cards-board .tt-today__tmr > .tt-today__div { position: absolute; left: 0; right: 0; top: calc(-0.5 * var(--slot-gap) - 8.5px); }   /* 구분선 글줄 높이 약 17px 의 절반 */
+.cards-board .tt-today__none--slot { box-sizing: border-box; height: calc((100cqw - 2px) * 0.5625 + var(--bh) + 2px); flex: none; display: grid; place-items: center; padding: 0 0.6rem; border-radius: 12px; text-wrap: balance; word-break: keep-all; }
 .cards-board .tt-today {
   --ch: calc((100cqw - 2 * var(--pad) - 2px) * 0.5625 + var(--bh) + 2px);
-  height: calc(34px + 2 * var(--pad) + 2 * var(--ch) + 12px + 30px);
+  height: calc(34px + 2 * var(--pad) + 2 * var(--ch) + var(--slot-gap) + 30px);   /* 칸 2개가 첫 화면에 보이고 3칸째부터 레인 안 스크롤 */
   padding: var(--pad);
   overflow-y: auto;
   flex: none;
@@ -657,6 +669,7 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
   font-size: 0.85rem;
 }
 .tt-today__stack { display: flex; flex-direction: column; gap: 12px; }
+.tt-today__tmr { display: flex; flex-direction: column; gap: 12px; }   /* (v4.11.18) 내일 묶음 — 모바일은 예전처럼 구분선도 한 줄 */
 /* (v4.9.6) 카드 보기의 내일 구분선 — 오늘 예정 다음, 내일 예고(다음 04:00 하루)의 예정 앞 */
 .tt-today__div {
   display: flex; align-items: center; gap: 8px;

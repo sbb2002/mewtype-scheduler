@@ -1106,15 +1106,25 @@ export function buildTodayCards(ctx, key, opts = {}) {
     ...mL.map((entry) => ({ entry, state: "live" })),
     ...mU.map((entry) => ({ entry, state: "upcoming" })),
   ];
-  if (!all.length && !mT.length) { sec.appendChild(el("div", "tt-today__none", "오늘 남은 예고가 없습니다.")); return sec; }
-  if (!all.length) sec.appendChild(el("div", "tt-today__none", "오늘 남은 예고가 없습니다."));   // (v4.9.6) 오늘은 비고 내일만 있는 경우
+  // (v4.11.18) 카드 보기(compact)는 레인마다 「카드 한 장 높이의 칸」을 같은 간격으로 쌓아 N번째 칸이 5레인 모두 같은 높이에 온다 —
+  // 오늘이 비면 안내도 카드 크기 빈 칸(--slot)으로 한 칸을 차지하고, 내일 구분선은 칸을 차지하지 않는다(.tt-today__tmr 안, CSS 가 간격 안에 띄움).
+  // 모바일은 한 레인씩이라 예전 모양 그대로(낮은 안내 상자 · 구분선도 한 줄).
+  const noneCls = "tt-today__none" + (opts.compact ? " tt-today__none--slot" : "");
   const stack = el("div", "tt-today__stack");
+  if (!all.length && !mT.length) {   // 카드 보기는 빈 칸도 칸 격자(.tt-today__stack) 안에 — 높이를 카드 폭으로 잰다
+    const none = el("div", noneCls, "오늘 남은 예고가 없습니다.");
+    if (opts.compact) { stack.appendChild(none); sec.appendChild(stack); } else sec.appendChild(none);
+    return sec;
+  }
+  if (!all.length) (opts.compact ? stack : sec).appendChild(el("div", noneCls, "오늘 남은 예고가 없습니다."));   // (v4.9.6) 오늘은 비고 내일만 있는 경우
   const bigIdx = all.findIndex((g) => g.state !== "ended");
   all.forEach((g, i) => stack.appendChild(todayCard(g.entry, g.state, ctx, i === bigIdx, key)));
   if (mT.length) {
-    stack.appendChild(el("div", "tt-today__div", `내일 예고 · ${mdw(ctx.de)} 04:00 ~`));   // (v4.9.6) 내일 구분선
+    const tmr = el("div", "tt-today__tmr");   // (v4.11.18) 내일 묶음 — 구분선 + 내일 카드
+    tmr.appendChild(el("div", "tt-today__div", `내일 예고 · ${mdw(ctx.de)} 04:00 ~`));   // (v4.9.6) 내일 구분선
     // 오늘 종료 외 카드가 없으면 내일 첫 카드가 big (bigIdx < 0)
-    mT.forEach((entry, i) => stack.appendChild(todayCard(entry, "upcoming", ctx, bigIdx < 0 && i === 0, key)));
+    mT.forEach((entry, i) => tmr.appendChild(todayCard(entry, "upcoming", ctx, bigIdx < 0 && i === 0, key)));
+    stack.appendChild(tmr);
   }
   sec.appendChild(stack);
   return sec;
