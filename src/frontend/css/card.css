@@ -177,14 +177,18 @@
 .card__rel.card__rel--prep { color: var(--color-late, #e0a030); font-weight: 600; animation: prep-blink 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .card__rel.card__rel--prep { animation: none; } }
 
-/* 썸네일 자리 아이콘 (announced 📺 / membership 🔒) */
+/* 썸네일 자리 선 아이콘 (예고 = 화면 / 회원 전용 = 자물쇠) — js/icons.js */
 .card__icon {
-  font-size: 3rem;
-  line-height: 1;
-  filter: saturate(0.85);
+  width: 40px;
+  height: 40px;
+  color: var(--color-text-muted);
 }
-/* 회원 전용 배지 칩 ("🔒 회원 전용 방송") */
+/* 회원 전용 배지 칩 (자물쇠 + 「회원 전용 방송」) */
+.card__chip-ico { width: 12px; height: 12px; flex: none; }
 .card__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   align-self: flex-start;
   font-size: 0.68rem;
   font-weight: 650;
@@ -327,7 +331,7 @@
     padding: 0.1rem 0.4rem;
     font-size: 0.62rem;
   }
-  .card__icon { font-size: 2.2rem; }
+  .card__icon { width: 32px; height: 32px; }
 
   /* 모바일에서 announced/watching/end 클래스도 같은 가로 레이아웃 */
   .card--announced,

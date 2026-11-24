@@ -241,7 +241,6 @@
   width: 2px;
   margin-left: -1px;
   background: var(--color-live);
-  box-shadow: 0 0 10px rgba(255, 59, 48, 0.6);
 }
 .tt__nowtag {
   position: absolute;
@@ -726,7 +725,8 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 }
 .tcard__pill--live { background: var(--color-live); color: var(--color-live-text); box-shadow: 0 0 10px rgba(255, 0, 0, 0.55); }
 .tcard__pill--end { background: rgba(0, 0, 0, 0.65); color: #ddd; }
-.tcard__pill--lock { background: rgba(0, 0, 0, 0.65); color: #dff7e8; padding: 4px 9px; letter-spacing: 0; }
+.tcard__pill--lock { display: inline-flex; align-items: center; background: rgba(0, 0, 0, 0.65); color: #dff7e8; padding: 4px 8px; letter-spacing: 0; }
+.tcard__lock-ico { width: 14px; height: 14px; display: block; }
 /* 카운트다운 링: 24시간 중 남은 비율만큼 채워진다 (timetable.js updateRing). 제목 영역 오른쪽, 영역 높이에 맞춘 크기 */
 .tcard__ring {
   position: relative;

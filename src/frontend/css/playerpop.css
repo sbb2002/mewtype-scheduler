@@ -414,7 +414,8 @@ html.mp-lock { overflow: hidden; }
 .mp-srow { display: flex; gap: 6px; min-width: 0; }
 .mp-srow .mp-search { flex: 1; min-width: 0; }
 .mp-search-x { display: none; flex: none; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 0.8rem; }   /* 모바일 검색 중에만 */
-.mp-search:focus-within { border-color: var(--mp-accent); }
+/* 검색칸은 눌러도 커서만 보인다 — 입력칸 윤곽선(.mp-pop :focus-visible) · 테두리 강조를 띄우지 않는다(2026-11-24 운영자 요청) */
+.mp-pop .mp-search input:focus-visible { outline: none; }
 .mp-search input {
   flex: 1;
   min-width: 0;

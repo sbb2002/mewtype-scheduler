@@ -293,13 +293,13 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
 
 | state | 최상위 class | 썸네일 자리 | `.card__rel` |
 |---|---|---|---|
-| `announced` | `card card--announced` | 아이콘 `📺` (`card__icon`) | `relativeLabel`, 배지 "예고"(`card__badge--announced`), href = 채널 URL |
+| `announced` | `card card--announced` | 선 아이콘 「화면」(`svg.card__icon`, (v4.11.17) `js/icons.js` `lineIcon("tv")` — 전엔 이모지 📺) | `relativeLabel`, 배지 "예고"(`card__badge--announced`), href = 채널 URL |
 | `upcoming` | `card card--upcoming` | 썸네일 `<img>` | `relativeLabel` (+ `card__rel--late` 토글) |
 | `watching` | `card card--watching` | 썸네일 `<img>` | `relativeLabel` (+late), 배지 "대기 중"(`card__badge--watching`) |
 | `live` | `card card--live` | 썸네일 + `LIVE` 배지 | `elapsedLabel(actual_start)` = `"방송 중 (n분)"` |
 | `end` | `card card--end` | 썸네일 유지, 배지 "종료"(`card__badge--end`) | `"방송 종료"`. 빨강 테두리 없음(OFF-AIR 소등) |
 
-- `membership` true → `card--membership` 추가. 썸네일 자리 자물쇠 `🔒`(`card__icon`), body 에 `card__chip` "🔒 회원 전용 방송".
+- `membership` true → `card--membership` 추가. 썸네일 자리 선 아이콘 자물쇠(`svg.card__icon`), body 에 `card__chip` = 자물쇠 선 아이콘(`svg.card__chip-ico`) + 「회원 전용 방송」. (v4.11.17) 전엔 이모지 🔒 — 아이콘은 `js/icons.js` `lineIcon`(굵기 1.5 · 글자색).
 - `assumed_live` && state ∈ (announced, upcoming) → `card--sched-live` 추가, `.card__rel` = `"방송 중 (추정)"`(빨강), 테두리 실선.
 - `kind=="collab"` (또는 `collab_with` 존재) → `card--collab` 추가, 배지 "합동"(`card__badge--collab`), href = `url`.
   `announced` 는 우측 상단 배지 자리를 "합동"이 대신 차지(예고/합동 상호 배타). `upcoming`/
@@ -396,7 +396,7 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
 **PC → 모바일 폭 전환 (v4.6.4)**: 767px 경계 리스너가 두 곳(`render.js` `mqlPhone` → `initMobileCarousel`, `main.js` → `paintBoard`)이고 `render.js` 쪽이 먼저 돈다. 이때 보드는 아직 PC 구성(레인이 안쪽 상자 안)이라 `initMobileCarousel` 은 **레인이 모두 보드 직속일 때만** 캐러셀을 만들고 아니면 돌아간다 — 바로 뒤 `paintBoard` 가 모바일 구성으로 다시 그리며 다시 부른다. 전엔 여기서 `insertBefore` NotFoundError(콘솔 1건, 화면은 정상)가 났다.
 이후 예고가 0건이면 `.tt-fold` 와 목록을 만들지 않는다(PC = 전체 0건, 모바일 = 그 멤버 0건).
 합동 카드는 이미지 **왼쪽 위에 참여 멤버 아바타만**(하단 선택 아이콘과 같은 고정 순서 아라레-유노-노노카-리츠-미야코로 겹쳐서, 이름 글자 없음, **그 레인의 본인은 뺀다**. 본인 외 참여자를 모르면 빈 알약을 만들지 않는다) 놓고, "합동" 글자는 날짜 옆 태그로만 쓴다.
-회원 전용(`membership`) 카드는 이미지 오른쪽 아래 알약 줄(`.tcard__pills`)의 **LIVE · 종료 알약 왼쪽에 🔒 알약**이 붙는다(예정 카드는 🔒 만).
+회원 전용(`membership`) 카드는 이미지 오른쪽 아래 알약 줄(`.tcard__pills`)의 **LIVE · 종료 알약 왼쪽에 자물쇠 알약**이 붙는다(예정 카드는 자물쇠만). 알약 안은 선 아이콘(`svg.tcard__lock-ico`, (v4.11.17) 전엔 이모지 🔒).
 오늘 카드의 날짜·시각 줄(`.tcard__when`)은 상태와 관계없이 같은 굵은 글씨(종료는 `[날짜] [시작~종료]` — 글꼴은 같고 색만 종료 카드의 흐린 색. 방송 시간은 글자 대신 오른쪽 **회색 링**: 방송 중 경과 링이 끝난 순간에 멈춘 모양, "N분" + "방송") — "LIVE · 방송 중" · "N분 후" · 종료/예고 태그는 쓰지 않고(이미지 알약 · 링이 보여 줌) 태그는 **합동 · 회원 전용**만, 모자라면 다음 줄로 내려간다.
 오늘 카드 제목(`.tcard__ti`)은 한 줄 + 넘치면 기존 카드와 같은 marquee(`render.js applyMarquees`).
 마우스 드래그(`pointerType=="mouse"`)로도 넘길 수 있다 — 드래그 중 `#board.board--dragging`(스냅 해제), 놓으면 가장 가까운 유닛으로 `goDom`; 5px 넘게 끌었으면 그 클릭은 무시.
@@ -1528,7 +1528,7 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 ### 소식판 (v4.6.4) — `notices.js` · `css/notices.css`
 
 2026-10-22 운영자 확정(시안 아티팩트 「소식 팝업 카드」 · 「소식판 시안」). 경계 = 767px(이하 모바일).
-- **PC = 날짜별 묶음**: 접힌 막대 = [램프] [분류별 건수 칩] [오늘 n · 7일 안 n] [5초마다 넘어가는 티커] [▾] [테마]
+- **PC = 날짜별 묶음**: 접힌 막대 = [램프 — 날짜가 오늘(D-0)인 소식이 있으면(`.ntc.has-today`) 빨간 점이 켜진다. (v4.11.17) 깜빡임 · 번짐을 뺐다. 새 소식 표시는 아래 「새 소식 점」이 맡는다] [분류별 건수 칩] [오늘 n · 7일 안 n] [5초마다 넘어가는 티커] [▾] [테마]
   ((v4.7.5) 모바일과 같은 분류 칩을 PC 에도 — 누르면 그 분류로 펼침, 「소식」 글자는 PC 에서도 숨김). 티커 한 줄 = D-day · 분류 아이콘 · 제목 · 날짜(요일) 시각.
   **티커 제목을 누르면 링크로 가지 않고** 목록을 펼쳐 그 소식 팝업을 고정해 연다. 펼침 = 행사 배너 → 분류 칩(스크롤해도 위에 붙음) + [한글 | 원문] → 날짜 묶음
   (날짜 칸 한 줄 「10/24 (토) [D-day]」, 소식 줄 = 시각 · 분류 아이콘 · 제목 / 분류 이름 · 이날까지 · 출처). 날짜 없는 소식은 「날짜 미정」 묶음.
@@ -1664,7 +1664,7 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
   프레임 자리(`.mp-slot`)는 어느 탭에서든 같다 — 프레임을 숨기거나 덮지 않는다. 곡 정보 · 컨트롤은 `.mp-play`(PC = `display:contents`, 모바일 = 재생 바 탭 패널), 어느 탭인지는 `.mp-pop[data-tab]`(`play` · `songs` · `queue`, `player.js paintTabs`). 처음엔 1번째 탭(모바일 = 재생 바, PC = 곡 찾기 — `st.tab` 초기값 `play`, PC 는 `shownTab` 이 곡 찾기로 바꾼다)이고 시트를 다시 열어도 마지막 탭을 유지한다.
   곡 찾기 · 재생목록 탭에는 재생 조작이 없다 — 재생 · 정지 · 셔플 · 반복 · 재생 위치 · 음원/MV · 오마카세는 재생 바 탭에서. 재생 불가 안내(`.mp-skip`) · 오류(`.mp-err`)는 재생 바 탭이 아니면 탭 바 아래로 옮겨 보이게 한다(`placeSkip`).
   곡 줄은 72px → 50px 두 줄(곡명 / 독음 · 멤버 · 종류 · 날짜 `26.09` · MV, 그룹은 「그룹」). 검색 · 필터 줄(`.mp-tools`)은 위에 붙고 곡 줄만 지나간다. 정렬은 칩 줄 끝 버튼 하나(`.mp-sort__cycle`)로 날짜↓ → 날짜↑ → 이름↑ → 이름↓ 순환.
-  **검색 모드**(`.mp-pop.is-search`): 검색창을 누르면 탭 바 · 칩 줄을 접고 「취소」(`.mp-search-x`)를 띄운다. `--mp-kb` = 키보드가 가린 높이(`visualViewport`), 그만큼 결과 칸 아래를 띄운다. 글자가 남아 있으면 키보드가 닫혀도 유지하고 「취소」로만 나간다(곡을 누르는 순간 줄이 밀리지 않게). 빈 검색창을 벗어나면 저절로 복귀.
+  **검색 모드**(`.mp-pop.is-search`): 검색창을 누르면 탭 바 · 칩 줄을 접고 「취소」(`.mp-search-x`)를 띄운다. `--mp-kb` = 키보드가 가린 높이(`visualViewport`), 그만큼 결과 칸 아래를 띄운다. 글자가 남아 있으면 키보드가 닫혀도 유지하고 「취소」로만 나간다(곡을 누르는 순간 줄이 밀리지 않게). 빈 검색창을 벗어나면 저절로 복귀. (v4.11.17, PC · 모바일) 검색창을 눌러도 윤곽선 · 테두리 강조 없이 커서만 보인다(`.mp-pop .mp-search input:focus-visible { outline: none }`, 테두리 강조 `:focus-within` 제거).
 - **재생목록**(2026-10-07~08): 오른쪽 곡 목록의 곡을 **누르면 재생목록(재생부 아래 「재생목록」 칸 — 움푹 패인 우물 모양)의 맨 뒤에 쌓인다. 같은 곡을 또 눌러도 또 쌓인다(빠지지 않음, 곡 줄에는 「재생목록 1·3번」)**.
   **재생목록이 비어 있거나 재생이 끝나 멈춰 있으면(`st.ended`, v4.11.6) 쌓인 곡을 바로 재생**하고, 그 밖에는 쌓기만 한다 — 재생 중 · 일시정지 중에는 쌓기만. `st.ended` 는 마지막 곡이 끝나 멈췄을 때 · 재생목록 밖 곡이 끝났을 때 · 넘어갈 곡 없이 재생 불가로 멈췄을 때 켜지고, 재생이 다시 시작되거나 곡을 고르면 꺼진다. 재생 버튼은 멈춰 있고 지금 곡이 재생목록에서 고른 것이 아니면 1번부터 시작한다.
   같은 곡이 여러 번 있을 수 있어 「지금 곡」은 곡 id 가 아니라 **재생목록 위치(`st.qi`, 0부터, -1 = 재생목록에서 고른 곡이 아님)** 로 추적한다. 재생목록 칸의 곡을 누르면 그 위치로 이동·재생, ✕ 로 빼기(지금 곡을 빼면 끝까지 재생 후 멈춤), 「비우기」로 전체 삭제.

@@ -3,6 +3,7 @@ import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
 import { createPlayerButton } from "./playerbtn.js";
 import { vibrate } from "./sheetdrag.js";   // (마이크로 인터랙션) 멤버를 넘길 때 짧은 진동
 import { markCopy } from "./longcopy.js";   // (v4.11.5) 길게 눌러 주소 복사
+import { lineIcon } from "./icons.js";   // 이모지 대신 선 아이콘
 import { createWeekButton, setWeekData } from "./weekpop.js";   // (v4.9.6) 모바일 「표」 버튼 · 이번주 · 먼 미래 시트
 import {
   avatarSized, classify, itemKeys, buildTimetable, buildBoardHead, buildTodayCards, buildFoldButton,
@@ -147,15 +148,9 @@ function createCardBase(item, nowMs, channelData, laneKey) {
     const thumbWrap = document.createElement("div");
     thumbWrap.className = "card__thumb-wrap";
     if (item.membership) {
-      const lock = document.createElement("span");
-      lock.className = "card__icon";
-      lock.textContent = "🔒";
-      thumbWrap.appendChild(lock);
+      thumbWrap.appendChild(lineIcon("lock", "card__icon"));
     } else {
-      const icon = document.createElement("span");
-      icon.className = "card__icon";
-      icon.textContent = "📺";
-      thumbWrap.appendChild(icon);
+      thumbWrap.appendChild(lineIcon("tv", "card__icon"));
     }
     const badge = document.createElement("span");
     badge.className = isCollab ? "card__badge card__badge--collab" : "card__badge card__badge--announced";
@@ -170,7 +165,7 @@ function createCardBase(item, nowMs, channelData, laneKey) {
     if (item.membership) {
       const chip = document.createElement("span");
       chip.className = "card__chip";
-      chip.textContent = "🔒 회원 전용 방송";
+      chip.append(lineIcon("lock", "card__chip-ico"), "회원 전용 방송");
       body.appendChild(chip);
     }
 
@@ -265,10 +260,7 @@ function createCardBase(item, nowMs, channelData, laneKey) {
 
   if (item.membership) {
     // membership 은 썸네일 자리에 자물쇠 + 배지
-    const lock = document.createElement("span");
-    lock.className = "card__icon";
-    lock.textContent = "🔒";
-    thumbWrap.appendChild(lock);
+    thumbWrap.appendChild(lineIcon("lock", "card__icon"));
   } else if (item.thumbnail) {
     const img = document.createElement("img");
     img.className = "card__thumb";

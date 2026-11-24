@@ -90,12 +90,7 @@
   background: var(--ntc-lamp-off);
 }
 .ntc.has-today .ntc__lamp {
-  background: var(--color-live);
-  animation: ntc-lamp 2.4s ease-in-out infinite;
-}
-@keyframes ntc-lamp {
-  0%, 100% { opacity: 1; box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-live) 60%, transparent); }
-  50%      { opacity: 0.22; box-shadow: 0 0 0 0 transparent; }
+  background: var(--color-live);   /* 오늘 소식 있음 = 켜진 점. 라이브가 아니라서 깜빡이지 않는다 */
 }
 .ntc__all { font-weight: 400; letter-spacing: 0; color: var(--color-text-muted); margin-left: 0.35rem; }
 .ntc__all[hidden] { display: none; }

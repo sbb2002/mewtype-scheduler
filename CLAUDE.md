@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 보여주는 반응형 정적 웹사이트. 팬이 사이트에 방문하면 누가 언제 방송하는지, 지금 라이브 중인지,
 어느 주소로 가면 되는지 한눈에 확인한다.
 
-**현재 버전 = v4.11.16 (일반 패치, 2026-11-23)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+**현재 버전 = v4.11.17 (일반 패치, 2026-11-24)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 (`git describe --tags`). 버전별로 무엇이 바뀌었는지 · 배포 리비전 · 롤백 대상은 **`docs/VERSION.md`**(맨 위 태그 대조표 + 버전별 상세)가 정본이다 —
 이 파일에는 버전 이력을 쌓지 않는다(아래 「버전 올릴 때 할 일」).
 
@@ -140,6 +140,7 @@ src/
       king.js          # 노노카 지각 이스터에그
       theme.js sheetdrag.js   # 밝게/어둡게 전환 · 시트/토스트 끌어 닫기
       longcopy.js      # 카드 · 블록 · 점을 길게 눌러 주소 복사 · 첫 안내 말풍선
+      icons.js         # 선 아이콘(자물쇠 · 화면) — 이모지 대신, 굵기 1.5 · 글자색
       netrecover.js    # 조회 실패 복구 상태 기계 — 재시도 뒤에도 실패하면 화면 중앙 안내
       bgdeco.js bglogic.js   # 배경 장식 — 분홍 → 파랑 톤 + 떠다니는 로고 도형 · 폰 흔들면 흩어짐(bglogic = 순수 로직 · 물리, css/bgdeco.css)
       birthdayui.js birthday.js   # KST 생일 판정 · 유리 패널 · 🎂 끌기 · 음악 인트로 수명 관리
