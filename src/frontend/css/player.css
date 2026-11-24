@@ -23,14 +23,17 @@ html[data-new-song] .player-btn:not(.week-btn)::after {
   right: -8px;
   padding: 1px 5px;
   border-radius: 999px;
-  background: #e5384a;
+  background: linear-gradient(110deg, #e5384a 38%, #ff9aa5 50%, #e5384a 62%) 0 0 / 260% 100%;
   color: #fff;
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.35;
   letter-spacing: 0.03em;
   pointer-events: none;
+  animation: player-new-shine 2.6s linear infinite, player-new-pulse 1.8s ease-in-out infinite;
 }
+@keyframes player-new-shine { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+@keyframes player-new-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(229, 56, 74, 0.55); } 50% { box-shadow: 0 0 0 4px rgba(229, 56, 74, 0); } }
 @media (prefers-reduced-motion: reduce) {
   html[data-new-song] .player-btn:not(.week-btn)::after { animation: none; background: #e5384a; }
 }
