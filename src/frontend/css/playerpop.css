@@ -22,7 +22,7 @@
   --mp-tab-play: #f29ac0;    /* (v4.11.11) 재생 바 탭 — 배경 분홍 톤 */
   --mp-tab-songs: #8ec5f0;   /* (v4.11.11) 곡 찾기 탭 — 배경 파랑 톤 */
   --mp-tab-queue: var(--mp-accent);   /* (v4.11.11) 재생목록 탭 — 보라(재생목록 색조와 같다) */
-  --mp-search-on: #08080b;   /* 곡 찾기 칸을 누르면 바탕이 이 색(--color-bg 보다 짙게)으로 부드럽게 바뀐다. 밝게 = theme.css */
+  --mp-search-on: color-mix(in srgb, var(--mp-accent) 10%, var(--color-bg));   /* 곡 찾기 칸을 누르면 바탕이 이 색으로 부드럽게 바뀐다 — 어둡게는 바탕이 이미 거의 검정이라 보랏빛을 살짝 섞는다. 밝게 = theme.css(더 짙게) */
 }
 
 html.mp-lock { overflow: hidden; }
