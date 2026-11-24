@@ -234,6 +234,35 @@ export function goldTag(cls, text, star = false) {
   t.appendChild(document.createTextNode(text));
   return t;
 }
+/* ── 아침방송 태그 (하늘색 알약 + 해) ─────────────────────────────────
+   예고 시작(scheduled_start, 없으면 실제 시작)이 KST 05:00~10:59 인 방송. 시각 미정(time_tbd)은 뺀다.
+   해 색은 SVG 속성으로 직접 준다 — CSS 로 칠하면 테마 · 상속에 따라 검게 나올 수 있다. */
+const MORNING_FROM = 5, MORNING_TO = 11;     // [05:00, 11:00)
+const _kh = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", hour: "numeric", hourCycle: "h23" });
+export function isMorning(item, startMs) {
+  if (!item || item.time_tbd) return false;
+  const s = item.scheduled_start ? Date.parse(item.scheduled_start) : startMs;
+  if (!isFinite(s)) return false;
+  const h = Number(_kh.format(new Date(s)));
+  return h >= MORNING_FROM && h < MORNING_TO;
+}
+function morningTag(cls) {
+  const t = el("span", `morning ${cls}`, "");
+  t.setAttribute("role", "img");
+  t.setAttribute("aria-label", "아침방송");
+  const ns = "http://www.w3.org/2000/svg";
+  const mk = (tag, attrs) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  const svg = mk("svg", { viewBox: "-8 -8 16 16", class: "morning__sun", "aria-hidden": "true" });
+  const rays = mk("g", { class: "morning__rays", fill: "none", stroke: "#ffd23a", "stroke-width": "1.5", "stroke-linecap": "round" });
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4, c = Math.cos(a), sn = Math.sin(a);
+    rays.appendChild(mk("line", { x1: (5.2 * c).toFixed(2), y1: (5.2 * sn).toFixed(2), x2: (7.2 * c).toFixed(2), y2: (7.2 * sn).toFixed(2) }));
+  }
+  svg.appendChild(rays);
+  svg.appendChild(mk("circle", { r: "3.6", fill: "#ffd23a", stroke: "#ffae00", "stroke-width": "0.8" }));
+  t.appendChild(svg);
+  return t;
+}
 /** 취소된 예고를 눌렀을 때 — 취소 글을 트윗 시트에서 열고, 시트에 없으면(48시간 지남 등) X 글 주소를 새 탭으로. 글이 없으면 살짝 흔든다 */
 function onCancelledTap(e, node, item) {
   e.preventDefault();
@@ -466,7 +495,11 @@ function blockEl(entry, state, ctx, geo, rowKey) {
   b.setAttribute("aria-label", `${titleText(it, ctx)} · ${rangeLabel(entry, state)}` + (cx ? " · 취소됨" + (cxHasTweet(it) ? ", 누르면 취소 글" : "") : ""));
 
   const bth = thumbEl(it, "tt-blk__th", ctx);
-  if (it.is_premiere && state !== "ended") bth.appendChild(goldTag("tt-blk__prem", "PREMIERE"));   // (v4.11.14) 테두리 대신 금색 배지
+  // 썸네일 오른쪽 아래 태그 줄 — 방송 상태 태그(PREMIERE)가 항상 왼쪽, 그 오른쪽에 아침방송 해
+  const btags = el("div", "tt-blk__tags");
+  if (it.is_premiere && state !== "ended") btags.appendChild(goldTag("tt-blk__prem", "PREMIERE"));   // (v4.11.14) 테두리 대신 금색 배지
+  if (isMorning(it, entry.start)) btags.appendChild(morningTag("tt-blk__morning"));
+  if (btags.children.length) bth.appendChild(btags);
   b.appendChild(bth);
   const tx = el("div", "tt-blk__tx");
   const head = el("div", "tt-blk__t");
@@ -1020,7 +1053,7 @@ function todayCard(entry, state, ctx, big, laneKey) {
       th.appendChild(nm);
     }
   }
-  // 이미지 오른쪽 아래 알약: [🔒 회원 전용] 왼쪽에 [LIVE | 종료]
+  // 이미지 오른쪽 아래 알약: 왼쪽부터 [🔒 회원 전용] [☀ 아침방송] [종료 | PREMIERE | LIVE]
   const pills = el("div", "tcard__pills");
   if (it.membership) {
     const lock = el("div", "tcard__pill tcard__pill--lock");
@@ -1029,6 +1062,8 @@ function todayCard(entry, state, ctx, big, laneKey) {
     lock.setAttribute("aria-label", "회원 전용");
     pills.appendChild(lock);
   }
+  // 아침방송 해는 방송 상태 알약(종료 · PREMIERE · LIVE) 바로 왼쪽 — 상태 알약이 항상 맨 오른쪽 끝
+  if (isMorning(it, entry.start)) pills.appendChild(morningTag("tcard__pill tcard__pill--morning"));
   if (state === "ended") pills.appendChild(el("div", "tcard__pill tcard__pill--end", "종료"));
   else if (it.is_premiere) pills.appendChild(goldTag("tcard__pill tcard__pill--premiere", "PREMIERE", true));   // (v4.11.14) 금색 · 빛줄기
   else if (state === "live") pills.appendChild(el("div", "tcard__pill tcard__pill--live", "LIVE"));

@@ -947,8 +947,34 @@ html.wk-lock .tt-pop { z-index: 900; }          /* 시트 위에 카드 팝업 *
 @media (prefers-reduced-motion: reduce) { .gold::after { display: none; } .gold__spk { animation: none; } }
 .tt-tag.tt-tag--premiere { padding: 1px 8px; font-size: 0.64rem; }
 .tcard__pill.tcard__pill--premiere { padding: 4px 11px; font-size: 0.74rem; }
-.tt-blk__th { position: relative; }
-.tt-blk__prem { position: absolute; right: 3px; bottom: 3px; padding: 1px 5px; font-size: 0.5rem; letter-spacing: 0.04em; }
+.tt-blk__th { position: relative; max-width: 100%; }   /* 블록이 썸네일(98px)보다 짧으면 썸네일도 줄인다 — 전엔 오른쪽이 잘려 오른쪽 아래 태그가 안 보였다 */
+.tt-blk__tags { position: absolute; right: 3px; bottom: 3px; display: flex; align-items: center; gap: 3px; }   /* 왼쪽 = 상태(PREMIERE), 오른쪽 = 아침방송 */
+.tt-blk__prem { padding: 1px 5px; font-size: 0.5rem; letter-spacing: 0.04em; }
+/* 끝에 걸려 썸네일이 36px 로 좁아진 블록 — PREMIERE 는 들어가지 않아 글자 칸을 덮으므로 썸네일에서는 뺀다(시각 옆 「프리미어」 태그가 남는다) */
+.tt-blk--tight .tt-blk__prem { display: none; }
+
+/* ── 아침방송 태그 — 예고 시작 KST 05:00~10:59. 하늘색 알약 + 해(색은 SVG 속성), 햇살이 천천히 돈다 ── */
+.morning {
+  position: relative; overflow: hidden; isolation: isolate;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 99px;
+  background: linear-gradient(160deg, #eaf8ff 0%, #9bdcff 26%, #3db8f5 58%, #74d2ff 80%, #1a9de4 100%);
+  box-shadow: inset 0 0 0 1px rgba(235, 250, 255, 0.85), inset 0 -1px 0 rgba(0, 70, 130, 0.35), 0 2px 8px rgba(30, 150, 230, 0.35);
+}
+.morning::before {
+  content: ""; position: absolute; z-index: -1; left: -8px; top: -10px; width: 26px; height: 26px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 246, 200, 0.9) 0%, rgba(255, 236, 150, 0.35) 45%, transparent 70%);
+  animation: morning-glow 4s ease-in-out infinite; pointer-events: none;
+}
+@keyframes morning-glow { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+.morning__sun { display: block; overflow: visible; filter: drop-shadow(0 0 2px rgba(255, 210, 60, 0.9)); }
+.morning__rays { transform-box: fill-box; transform-origin: center; animation: morning-spin 14s linear infinite; }
+@keyframes morning-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .morning::before, .morning__rays { animation: none; } }
+.tcard__pill.tcard__pill--morning { padding: 4px 9px; }
+.tcard__pill--morning .morning__sun { width: 16px; height: 16px; }
+.tt-blk__morning { padding: 1px 4px; box-shadow: inset 0 0 0 1px rgba(235, 250, 255, 0.85), inset 0 -1px 0 rgba(0, 70, 130, 0.35); }
+.tt-blk__morning .morning__sun { width: 10px; height: 10px; }
 
 /* ── (v4.11.14) 취소된 예고 ─────────────────────────────────────────────
    그날 끝(KST 04:00)까지 남는다. 도넛 = 원래 모양 그대로 회색으로 가득 찬 원 + 「취소됨」. 시각 취소선 · 썸네일 흐림.
