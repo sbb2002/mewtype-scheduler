@@ -311,6 +311,9 @@
   width: 98px;
   background: var(--color-img) center / cover no-repeat;
 }
+/* (v4.11.19) 익일 04:00 끝에 걸려 좁아진 블록 — 시작 위치를 지키려고 폭을 줄였으니 썸네일을 좁혀 시각 · 카운트다운 글자 칸을 남긴다 */
+.tt-blk--tight { gap: 6px; }
+.tt-blk--tight .tt-blk__th { width: 36px; }
 /* 블록 안 3줄 = ① 시각 · 태그 ② 카운트다운 ③ 제목 — 줄마다 고정 높이라 태그 유무 · 상태와 무관하게 같은 줄이 같은 높이에 놓인다 */
 .tt-blk__tx {
   flex: 1;
