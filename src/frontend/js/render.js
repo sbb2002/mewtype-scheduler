@@ -635,6 +635,10 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
       lane.appendChild(buildLaterList(laterBy[key] || [], nowMs, channels[key], key));
       grid.appendChild(lane);
     }
+    // (v4.11.18b) 「이후 예고」를 펼치면 오늘 예고 영역의 고정 높이(칸 2개 + 살짝)를 풀고 5레인 모두 가장 많은 칸 수만큼 늘린다 —
+    // 칸이 3개 이상인 레인의 카드가 잘려 보이지 않고, 펼친 목록도 5레인이 같은 높이에서 시작한다(timetable.css --slots)
+    const slotsOf = (lane) => lane.querySelectorAll(".tt-today__stack > .tcard, .tt-today__stack > .tt-today__none, .tt-today__tmr > .tcard").length;
+    grid.style.setProperty("--slots", String(Math.max(2, ...[...grid.children].map(slotsOf))));
     sec.appendChild(grid);
     if (counts.total) sec.appendChild(buildFoldButton(counts, ctx, { perMember: true }));
     boardEl.appendChild(sec);
