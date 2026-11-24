@@ -68,6 +68,8 @@ function durLabel(ms) {
 
 /* ── 오늘 구간 ────────────────────────────────────────────────────── */
 /* 오늘 구간(offset 0 = 오늘 예고, 1 = 내일 예고) */
+export { layoutRow };   // (v4.11.19) self-check 용
+
 export function dayWindow(nowMs, offset = 0) {
   const k = nowMs + KST_OFFSET_MS;
   const d = new Date(k);
@@ -460,6 +462,7 @@ function blockEl(entry, state, ctx, geo, rowKey) {
   b.setAttribute("aria-haspopup", "dialog");
   b.style.left = `${(geo.l / TRACK_PX) * 100}%`;
   b.style.width = `${(geo.w / TRACK_PX) * 100}%`;
+  if (geo.tight) b.classList.add("tt-blk--tight");   // (v4.11.19) 끝에 걸려 폭이 줄어든 블록
   b.setAttribute("aria-label", `${titleText(it, ctx)} · ${rangeLabel(entry, state)}` + (cx ? " · 취소됨" + (cxHasTweet(it) ? ", 누르면 취소 글" : "") : ""));
 
   const bth = thumbEl(it, "tt-blk__th", ctx);
@@ -505,9 +508,12 @@ function layoutRow(entries, ctx) {
     if (state === "live") w = Math.max(W_FIXED, ((ctx.nowMs - ctx.ds) / DAY_MS) * TRACK_PX - startPx);
     else if (entry.end) { w = Math.max(W_MIN, Math.min(1, (entry.end - ctx.ds) / DAY_MS) * TRACK_PX - startPx); known = true; }
     else w = W_FIXED;
-    let l = startPx;
-    if (!known && l + w > TRACK_PX) l = Math.max(0, TRACK_PX - w);       // 오른쪽 끝에 닿으면 끝에 맞춤
-    return { entry, state, l, w };
+    const l = startPx;
+    // (v4.11.19) 오른쪽 끝(익일 04:00)에 닿아도 시작 위치는 그대로 — 전엔 블록을 왼쪽으로 당겨 23:30 예고가 21시대에 그려졌다.
+    // 대신 폭을 끝까지로 줄이고, 고정 폭보다 좁아지면 tight(썸네일 축소)로 글자 칸을 확보한다
+    let tight = false;
+    if (!known && l + w > TRACK_PX) { w = Math.max(W_MIN, TRACK_PX - l); tight = w < W_FIXED; }
+    return { entry, state, l, w, tight };
   });
   items.sort((a, b) => a.l - b.l);
   items.forEach((it, i) => {

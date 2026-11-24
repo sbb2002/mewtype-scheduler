@@ -2,7 +2,7 @@
  * timetable.js 순수 헬퍼 자동 테스트 (v4.1.0).
  * node timetable.selfcheck.mjs 로 실행. 프레임워크 없음. (DOM 접근 함수는 호출하지 않는다)
  */
-import { dayWindow, classify, itemKeys, swipeDecision, dragFollow, planLater, laterCounts } from "./timetable.js";   // (v4.9.6) planLater · laterCounts 추가
+import { dayWindow, classify, itemKeys, swipeDecision, dragFollow, planLater, laterCounts, layoutRow } from "./timetable.js";   // (v4.9.6) planLater · laterCounts 추가
 
 let n = 0;
 function assert(cond, msg) {
@@ -147,5 +147,18 @@ const P2 = planLater([
 ], [], kst("2026-10-31T10:00:00"), ORDER);
 assert(P2.today === 6, "토요일 줄 = 6");
 assert(P2.far.length === 1 && P2.far[0].entries[0].item.video_id === "s3", "토 10:00 기준 — 11/2 05:00 만 먼 미래 (11/1 새벽 · 아침은 내일 예고 구간)");
+
+// (v4.11.19) 오른쪽 끝(익일 04:00)에 걸려도 블록 시작 위치는 실제 시각 그대로 — 폭만 줄인다
+{
+  const ds = kst("2026-11-24T04:00:00"), now = kst("2026-11-24T22:39:00");
+  const px = (t) => ((kst(t) - ds) / 86400000) * 888;
+  const R = layoutRow([{ entry: { start: kst("2026-11-24T23:30:00"), end: null }, state: "upcoming" }], { ds, nowMs: now });
+  assert(Math.abs(R[0].l - px("2026-11-24T23:30:00")) < 0.01, "23:30 예고 = 23:30 위치에서 시작 (왼쪽으로 당기지 않음)");
+  assert(Math.abs(R[0].l + R[0].w - 888) < 0.01 && R[0].tight, "끝에 걸리면 폭을 04:00 까지로 줄이고 tight");
+  const L = layoutRow([{ entry: { start: kst("2026-11-24T22:03:00"), end: null }, state: "live" }], { ds, nowMs: now });
+  assert(Math.abs(L[0].l - px("2026-11-24T22:03:00")) < 0.01, "22:03 시작 LIVE = 22:03 위치");
+  const E = layoutRow([{ entry: { start: kst("2026-11-24T12:00:00"), end: null }, state: "upcoming" }], { ds, nowMs: now });
+  assert(E[0].w === 250 && !E[0].tight, "끝에 안 걸리면 고정 폭 그대로");
+}
 
 console.log(`\n✅ 모두 통과: ${n}/${n}`);
