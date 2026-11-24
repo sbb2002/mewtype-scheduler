@@ -742,12 +742,13 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 .tcard__ring {
   position: relative;
   flex: none;
-  /* (v4.11.18) 같은 화면의 모든 카드에서 같은 크기 — 54px 가 기준이고, PC 카드 보기에서는 레인 폭(.board--cards .lane 컨테이너, 5레인 같은 폭)의 19.5% 로
-     줄어든다(레인 안쪽 278px 이상 = 54px, 최소 40px). 모바일은 컨테이너가 없어 cqi = 화면 폭 기준이라 늘 54px.
+  /* (v4.11.18) 같은 화면의 모든 카드에서 같은 크기 — 54px 가 기준이고, PC 카드 보기에서는 카드 폭(.tt-today__stack 컨테이너 = 카드 폭, 5레인 같은 폭)의
+     23% 로 줄어든다(카드 폭 235px 이상 = 54px, 최소 40px). 모바일은 컨테이너가 없어 cqi = 화면 폭 기준이라 늘 54px.
+     (v4.11.18a) v4.11.18 은 레인 폭 기준 19.5% 로 잡았다가 칸 격자의 .tt-today__stack 컨테이너가 더 가까워 카드 폭(236px)으로 재져 넓은 화면에서도 46px 였다
      전엔 레인 첫 카드(큰 카드)만 54px, 나머지 46px(PC 카드 보기 좁은 폭 44 / 40px)라 취소 카드가 첫 자리면 그 도넛만 커 보였다.
      안 글자는 --rs 에 비례(54px 일 때의 크기 그대로). container query 를 모르는 브라우저는 54px */
   --rs: 54px;
-  --rs: clamp(40px, 19.5cqi, 54px);
+  --rs: clamp(40px, 23cqi, 54px);
   width: var(--rs);
   height: var(--rs);
   display: grid;
