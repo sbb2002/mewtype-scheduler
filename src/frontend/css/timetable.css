@@ -631,17 +631,17 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 .cards-board .tt-today__stack, .cards-board .tt-today__tmr { gap: var(--slot-gap); }
 .cards-board .tt-today__tmr { position: relative; }
 .cards-board .tt-today__stack > *, .cards-board .tt-today__tmr > .tcard { flex: none; }
-/* 칸이 넘쳐 스크롤 막대가 생긴 레인만 카드 폭이 좁아져(썸네일 16:9 라 높이도 182 → 176px) 줄이 어긋났다 —
-   스크롤 막대 자리를 모든 레인에 늘 비워 두고, 빈 칸 높이도 실제 카드 폭(.tt-today__stack 컨테이너)으로 계산한다 */
-.cards-board .tt-today { scrollbar-gutter: stable; }
+/* 빈 칸 높이는 실제 카드 폭(.tt-today__stack 컨테이너)으로 계산한다 */
 .cards-board .tt-today__stack { container-type: inline-size; }
 .cards-board .tt-today__tmr > .tt-today__div { position: absolute; left: 0; right: 0; top: calc(-0.5 * var(--slot-gap) - 8.5px); }   /* 구분선 글줄 높이 약 17px 의 절반 */
 .cards-board .tt-today__none--slot { box-sizing: border-box; height: calc((100cqw - 2px) * 0.5625 + var(--bh) + 2px); flex: none; display: grid; place-items: center; padding: 0 0.6rem; border-radius: 12px; text-wrap: balance; word-break: keep-all; }
 .cards-board .tt-today {
   --ch: calc((100cqw - 2 * var(--pad) - 2px) * 0.5625 + var(--bh) + 2px);
-  height: calc(34px + 2 * var(--pad) + 2 * var(--ch) + var(--slot-gap) + 30px);   /* 칸 2개가 첫 화면에 보이고 3칸째부터 레인 안 스크롤 */
+  /* (v4.11.18b) 5레인 모두 보드에서 가장 많은 칸 수(--slots, render.js · 최소 2)만큼 — 잘린 카드 · 레인 안 스크롤 없이 접힌 상태 · 펼친 상태 모두 같다.
+     전엔 칸 2개 + 다음 카드 30px 만 보이고 나머지는 레인 안 스크롤이라, 칸이 3개 이상이면 셋째 카드가 잘려 보였다 */
+  height: calc(34px + 2 * var(--pad) + var(--slots, 2) * var(--ch) + (var(--slots, 2) - 1) * var(--slot-gap));
   padding: var(--pad);
-  overflow-y: auto;
+  overflow: hidden;
   flex: none;
 }
 .cards-board .tcard__body { height: var(--bh); padding: 10px 12px; }
