@@ -641,8 +641,6 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
   .cards-board .lane__avatar { width: 38px; height: 38px; }
   .cards-board .lane__name-orig { display: none; }
   .cards-board .tcard__body { padding: 8px 9px; gap: 6px; }
-  .cards-board .tcard__ring { width: 40px; height: 40px; }
-  .cards-board .tcard--big .tcard__ring { width: 44px; height: 44px; }
   .cards-board .tcard__ti { font-size: 0.85rem; }
   .cards-board .tcard--big .tcard__ti { font-size: 0.9rem; }
   .cards-board .tcard__when { font-size: 0.72rem; }
@@ -731,8 +729,8 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 .tcard__ring {
   position: relative;
   flex: none;
-  width: 46px;
-  height: 46px;
+  width: 54px;                /* (v4.11.18) 모든 카드 · 모든 폭에서 같은 크기 — 전엔 레인 첫 카드(큰 카드)만 54px, 나머지 46px(PC 카드 보기 좁은 폭 44 / 40px) */
+  height: 54px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -744,8 +742,7 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 .tcard__ring--up.is-min { background: conic-gradient(var(--color-ring-track) calc((100 - var(--p, 0)) * 1%), var(--rc, var(--color-late)) 0); }
 .tcard__ring--up.is-late b { color: var(--color-late); }   /* 시작 시각 지남 = 빈 링 + 노랑 글자 */
 .tcard__ring--up.is-late small { color: var(--color-late); }   /* (v4.11.16) 「n분 / 지각」 아래 줄도 노랑 */
-.tcard__ring--up.is-prep b { font-size: 0.62rem; letter-spacing: -0.02em; animation: prep-blink 2.4s ease-in-out infinite; }   /* (v4.11.16) 「준비중」 — 3글자라 한 단계 작게 */
-.tcard--big .tcard__ring--up.is-prep b { font-size: 0.7rem; }
+.tcard__ring--up.is-prep b { font-size: 0.7rem; letter-spacing: -0.02em; animation: prep-blink 2.4s ease-in-out infinite; }   /* (v4.11.16) 「준비중」 — 3글자라 한 단계 작게 */
 @media (prefers-reduced-motion: reduce) { .tt-blk__rel.is-prep, .tcard__ring--up.is-prep b { animation: none; } }
 .tcard__ring--live { --rcol: var(--color-live); }
 .tcard__ring--ended { --rcol: #8a8a8a; }            /* 종료 = 끝난 순간에 멈춘 회색 링 */
@@ -757,10 +754,8 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
   background: conic-gradient(from 0deg, var(--color-ring-track) calc(var(--p, 0) * 1%), var(--rcol) 0);
 }
 .tcard__ring--live span, .tcard__ring--up span { display: flex; flex-direction: column; align-items: center; line-height: 1.05; }
-.tcard__ring--live b, .tcard__ring--up b { font-size: 0.75rem; font-weight: 600; }
-.tcard__ring--live small, .tcard__ring--up small { font-size: 0.5rem; color: var(--color-text-muted); white-space: nowrap; }
-.tcard--big .tcard__ring--live b, .tcard--big .tcard__ring--up b { font-size: 0.85rem; }
-.tcard--big .tcard__ring--live small, .tcard--big .tcard__ring--up small { font-size: 0.56rem; }
+.tcard__ring--live b, .tcard__ring--up b { font-size: 0.85rem; font-weight: 600; }
+.tcard__ring--live small, .tcard__ring--up small { font-size: 0.56rem; color: var(--color-text-muted); white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) {
   .tcard__ring { transition: none; }
 }
@@ -773,12 +768,10 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 }
 .tcard__ring span {
   position: relative;
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
-.tcard--big .tcard__ring { width: 54px; height: 54px; }
-.tcard--big .tcard__ring span { font-size: 0.75rem; }
 .tcard__body { padding: 10px 12px 12px; display: flex; align-items: center; gap: 10px; min-width: 0; }
 .tcard__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .tcard__when {
@@ -947,7 +940,7 @@ html.wk-lock .tt-pop { z-index: 900; }          /* 시트 위에 카드 팝업 *
 }
 .tcard__cxhint { font-size: 0.7rem; color: var(--color-text-muted); }
 .tcard__ring.tcard__ring--cx { --p: 100; background: conic-gradient(var(--color-ended) calc(var(--p) * 1%), var(--color-ring-track) 0); }
-.tcard__ring--cx b { color: var(--color-ended); font-size: 0.72rem; font-weight: 600; letter-spacing: -0.02em; }
+.tcard__ring--cx b { color: var(--color-ended); font-size: 0.78rem; font-weight: 600; letter-spacing: -0.02em; }
 /* (v4.11.15) 도넛 원 안쪽의 멤버 이미지 — 안쪽 원(::before, inset 4px)과 같은 자리 · 같은 원으로 잘라 글자 뒤에 반투명하게.
    링(회색 테두리) 밖으로는 나가지 않는다. 글자는 바탕색 그림자로 이미지 위에서도 읽히게 */
 .tcard__cximg { position: absolute; inset: 4px; border-radius: 50%; overflow: hidden; pointer-events: none;
@@ -956,7 +949,6 @@ html.wk-lock .tt-pop { z-index: 900; }          /* 시트 위에 카드 팝업 *
 .tcard__ring--cx b { text-shadow: 0 0 3px var(--color-bg), 0 0 6px var(--color-bg); }
 .tcard.is-cx-in .tcard__cximg { animation: cx-img 0.6s ease-out 0.35s both; }
 @keyframes cx-img { from { opacity: 0; transform: scale(0.85); } to { opacity: 0.42; transform: none; } }
-.tcard--big .tcard__ring--cx b { font-size: 0.78rem; }
 .tcard.is-cx-in .tcard__ring--cx { animation: cx-fill 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .tcard.is-cx-in .tcard__ring--cx span { animation: cx-pop 0.45s cubic-bezier(0.25, 1.4, 0.45, 1) 0.45s both; }
 .tcard.is-cx-in .tcard__when > b:first-child::after { animation: cx-strike 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) 0.55s both; }
