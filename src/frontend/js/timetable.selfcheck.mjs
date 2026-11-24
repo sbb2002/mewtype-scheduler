@@ -2,7 +2,7 @@
  * timetable.js 순수 헬퍼 자동 테스트 (v4.1.0).
  * node timetable.selfcheck.mjs 로 실행. 프레임워크 없음. (DOM 접근 함수는 호출하지 않는다)
  */
-import { dayWindow, classify, itemKeys, swipeDecision, dragFollow, planLater, laterCounts, layoutRow } from "./timetable.js";   // (v4.9.6) planLater · laterCounts 추가
+import { dayWindow, classify, itemKeys, swipeDecision, dragFollow, planLater, laterCounts, layoutRow, isMorning } from "./timetable.js";   // (v4.9.6) planLater · laterCounts 추가
 
 let n = 0;
 function assert(cond, msg) {
@@ -159,6 +159,19 @@ assert(P2.far.length === 1 && P2.far[0].entries[0].item.video_id === "s3", "토 
   assert(Math.abs(L[0].l - px("2026-11-24T22:03:00")) < 0.01, "22:03 시작 LIVE = 22:03 위치");
   const E = layoutRow([{ entry: { start: kst("2026-11-24T12:00:00"), end: null }, state: "upcoming" }], { ds, nowMs: now });
   assert(E[0].w === 250 && !E[0].tight, "끝에 안 걸리면 고정 폭 그대로");
+}
+
+// 아침방송 태그 — 예고 시작 KST 05:00 ~ 10:59
+{
+  const at = (t, extra = {}) => ({ scheduled_start: t, ...extra });
+  assert(!isMorning(at("2026-11-25T04:59:00+09:00")), "04:59 = 아침 아님");
+  assert(isMorning(at("2026-11-25T05:00:00+09:00")), "05:00 = 아침");
+  assert(isMorning(at("2026-11-25T10:59:00+09:00")), "10:59 = 아침");
+  assert(!isMorning(at("2026-11-25T11:00:00+09:00")), "11:00 = 아침 아님");
+  assert(isMorning(at("2026-11-24T22:30:00Z")), "UTC 22:30 = KST 07:30 → 아침");
+  assert(isMorning(at("2026-11-25T07:00:00+09:00", { actual_start: "2026-11-25T11:20:00+09:00" }), kst("2026-11-25T11:20:00")), "예고 07:00 · 실제 11:20 시작 = 예고 시작 기준이라 아침");
+  assert(!isMorning(at("2026-11-25T07:00:00+09:00", { time_tbd: true })), "시각 미정 = 아침 아님");
+  assert(isMorning({}, kst("2026-11-25T06:00:00")) && !isMorning({}, NaN), "예고 시각이 없으면 실제 시작으로 · 둘 다 없으면 아님");
 }
 
 console.log(`\n✅ 모두 통과: ${n}/${n}`);
