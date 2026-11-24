@@ -331,15 +331,12 @@ html.mp-lock { overflow: hidden; }
 .mp-q__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mp-q__x { padding: 4px 8px; margin-right: 4px; font-size: 0.7rem; color: var(--color-text-muted); }
 .mp-q__x:hover { color: var(--color-text); }
-/* NEW 알약 — 빛이 지나가는 광택 + 은은한 맥박(번쩍임이 아니라 숨쉬듯). 움직임 줄이기 설정이면 멈춘다 */
+/* NEW 알약 — 단색 · 정지. 목록 안에서 여러 개가 동시에 번쩍이지 않게 움직임은 두지 않는다 */
 .mp-new {
-  display: inline-block; vertical-align: 1px; padding: 0 5px; border-radius: 999px; color: #fff;
-  font-size: 0.6rem; font-weight: 700; line-height: 1.5; letter-spacing: 0.03em;
-  background: linear-gradient(110deg, #e5384a 38%, #ff9aa5 50%, #e5384a 62%) 0 0 / 260% 100%;
-  animation: mp-new-shine 2.6s linear infinite, mp-new-pulse 1.8s ease-in-out infinite;
+  display: inline-block; vertical-align: 1px; padding: 0 5px; border-radius: 4px; color: #fff;
+  font-size: 0.6rem; font-weight: 600; line-height: 1.5; letter-spacing: 0.03em;
+  background: #e5384a;
 }
-@keyframes mp-new-shine { from { background-position: 130% 0; } to { background-position: -130% 0; } }
-@keyframes mp-new-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(229, 56, 74, 0.55); } 50% { box-shadow: 0 0 0 4px rgba(229, 56, 74, 0); } }
 /* 곡 줄의 「재생목록 N번 / N번 외 K」 — 글자 수가 고정 상한이라 곡 줄 폭을 늘리지 못한다(긴 번호 목록은 툴팁 · aria-label 로만) */
 .mp-q-badge {
   display: inline-block; flex: none; max-width: 100%; min-width: 0;

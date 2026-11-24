@@ -404,7 +404,7 @@ function onUnplayable() {
   if (!wantPlay) { deadId = st.curId; paint(); return; }   // 불러 두기만 한 곡(첫 화면 등) — 사용자가 틀기 전엔 안내 · 넘김 없이 둔다(▶ 를 누르면 togglePlay 가 다시 고른다)
   const more = st.qi >= 0 ? queueHasNext() : listHasNext();
   if (!more) st.ended = true;   // 넘어갈 곡이 없다 — 끝까지 재생하고 멈춘 것과 같다
-  showSkip(more ? "이 곡은 지금 재생이 불가능해요… 다음 곡으로 넘어갈게요!" : "이 곡은 지금 재생이 불가능해요.");
+  showSkip(more ? "이 곡은 지금 재생이 불가능해요… 다음 곡으로 넘어갈게요" : "이 곡은 지금 재생이 불가능해요.");
   skipTimer = setTimeout(() => { skipTimer = 0; hideSkip(); if (more) skipAway(); }, SKIP_MS);
   paint();
 }

@@ -16,7 +16,8 @@
 
 import { formatKST, latePhase } from "./time.js";
 import { KING_KEY, KING_RING_LATE, decorateBlock, decoratePopup, decorateCard } from "./king.js";   // (v4.3.1) 노노카 지각 이스터에그
-import { markCopy } from "./longcopy.js";   // (v4.11.5) 길게 눌러 주소 복사
+import { markCopy } from "./longcopy.js";
+import { lineIcon } from "./icons.js";   // 이모지 대신 선 아이콘   // (v4.11.5) 길게 눌러 주소 복사
 import { MEMBER_DOT_COLORS } from "./config.js";   // (v4.11.7) 이후 예고 점의 멤버 색(어둡게 · 밝게)
 
 const HOUR_MS = 3600000;
@@ -1016,7 +1017,8 @@ function todayCard(entry, state, ctx, big, laneKey) {
   // 이미지 오른쪽 아래 알약: [🔒 회원 전용] 왼쪽에 [LIVE | 종료]
   const pills = el("div", "tcard__pills");
   if (it.membership) {
-    const lock = el("div", "tcard__pill tcard__pill--lock", "🔒");
+    const lock = el("div", "tcard__pill tcard__pill--lock");
+    lock.appendChild(lineIcon("lock", "tcard__lock-ico"));
     lock.setAttribute("role", "img");
     lock.setAttribute("aria-label", "회원 전용");
     pills.appendChild(lock);

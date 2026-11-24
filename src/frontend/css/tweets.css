@@ -98,27 +98,7 @@
   outline: 2px solid var(--tw-badge-bg);
   outline-offset: 2px;
 }
-/* 안 읽음: 글로우 펄스 + 아주 약간 콩콩 점프 (주기적) */
-.lane__tw.is-unread {
-  animation: tw-pulse 2.8s ease-in-out infinite, tw-hop 2.8s ease-in-out infinite;
-}
-@keyframes tw-pulse {
-  0%, 100% {
-    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5))
-      drop-shadow(0 0 0 transparent);
-  }
-  50% {
-    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5))
-      drop-shadow(0 0 5px color-mix(in srgb, var(--tw-badge-bg) 80%, transparent));
-  }
-}
-@keyframes tw-hop {
-  0%, 20%, 100% { transform: translateY(0); }
-  5%  { transform: translateY(-3px); }
-  10% { transform: translateY(0); }
-  14% { transform: translateY(-1.5px); }
-  18% { transform: translateY(0); }
-}
+/* 안 읽음: 배지 자체가 표시다 — 반복 움직임은 두지 않는다 */
 
 /* ── 트윗 시트 (ui_spec.md §4) ─────────────────────────────────────────
    폰(767px 이하) = 아래에서 올라오는 시트(폭 전체 · 높이 86% · 위 모서리 22px · 끌어 닫기),
