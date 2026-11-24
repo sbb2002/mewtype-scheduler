@@ -729,8 +729,14 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 .tcard__ring {
   position: relative;
   flex: none;
-  width: 54px;                /* (v4.11.18) 모든 카드 · 모든 폭에서 같은 크기 — 전엔 레인 첫 카드(큰 카드)만 54px, 나머지 46px(PC 카드 보기 좁은 폭 44 / 40px) */
-  height: 54px;
+  /* (v4.11.18) 같은 화면의 모든 카드에서 같은 크기 — 54px 가 기준이고, PC 카드 보기에서는 레인 폭(.board--cards .lane 컨테이너, 5레인 같은 폭)의 19.5% 로
+     줄어든다(레인 안쪽 278px 이상 = 54px, 최소 40px). 모바일은 컨테이너가 없어 cqi = 화면 폭 기준이라 늘 54px.
+     전엔 레인 첫 카드(큰 카드)만 54px, 나머지 46px(PC 카드 보기 좁은 폭 44 / 40px)라 취소 카드가 첫 자리면 그 도넛만 커 보였다.
+     안 글자는 --rs 에 비례(54px 일 때의 크기 그대로). container query 를 모르는 브라우저는 54px */
+  --rs: 54px;
+  --rs: clamp(40px, 19.5cqi, 54px);
+  width: var(--rs);
+  height: var(--rs);
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -742,7 +748,7 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 .tcard__ring--up.is-min { background: conic-gradient(var(--color-ring-track) calc((100 - var(--p, 0)) * 1%), var(--rc, var(--color-late)) 0); }
 .tcard__ring--up.is-late b { color: var(--color-late); }   /* 시작 시각 지남 = 빈 링 + 노랑 글자 */
 .tcard__ring--up.is-late small { color: var(--color-late); }   /* (v4.11.16) 「n분 / 지각」 아래 줄도 노랑 */
-.tcard__ring--up.is-prep b { font-size: 0.7rem; letter-spacing: -0.02em; animation: prep-blink 2.4s ease-in-out infinite; }   /* (v4.11.16) 「준비중」 — 3글자라 한 단계 작게 */
+.tcard__ring--up.is-prep b { font-size: calc(var(--rs) * 0.207); letter-spacing: -0.02em; animation: prep-blink 2.4s ease-in-out infinite; }   /* (v4.11.16) 「준비중」 — 3글자라 한 단계 작게 */
 @media (prefers-reduced-motion: reduce) { .tt-blk__rel.is-prep, .tcard__ring--up.is-prep b { animation: none; } }
 .tcard__ring--live { --rcol: var(--color-live); }
 .tcard__ring--ended { --rcol: #8a8a8a; }            /* 종료 = 끝난 순간에 멈춘 회색 링 */
@@ -754,8 +760,8 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
   background: conic-gradient(from 0deg, var(--color-ring-track) calc(var(--p, 0) * 1%), var(--rcol) 0);
 }
 .tcard__ring--live span, .tcard__ring--up span { display: flex; flex-direction: column; align-items: center; line-height: 1.05; }
-.tcard__ring--live b, .tcard__ring--up b { font-size: 0.85rem; font-weight: 600; }
-.tcard__ring--live small, .tcard__ring--up small { font-size: 0.56rem; color: var(--color-text-muted); white-space: nowrap; }
+.tcard__ring--live b, .tcard__ring--up b { font-size: calc(var(--rs) * 0.252); font-weight: 600; }
+.tcard__ring--live small, .tcard__ring--up small { font-size: max(7px, calc(var(--rs) * 0.166)); color: var(--color-text-muted); white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) {
   .tcard__ring { transition: none; }
 }
@@ -768,7 +774,7 @@ html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, 
 }
 .tcard__ring span {
   position: relative;
-  font-size: 0.75rem;
+  font-size: calc(var(--rs) * 0.222);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -940,7 +946,7 @@ html.wk-lock .tt-pop { z-index: 900; }          /* 시트 위에 카드 팝업 *
 }
 .tcard__cxhint { font-size: 0.7rem; color: var(--color-text-muted); }
 .tcard__ring.tcard__ring--cx { --p: 100; background: conic-gradient(var(--color-ended) calc(var(--p) * 1%), var(--color-ring-track) 0); }
-.tcard__ring--cx b { color: var(--color-ended); font-size: 0.78rem; font-weight: 600; letter-spacing: -0.02em; }
+.tcard__ring--cx b { color: var(--color-ended); font-size: calc(var(--rs) * 0.231); font-weight: 600; letter-spacing: -0.02em; }
 /* (v4.11.15) 도넛 원 안쪽의 멤버 이미지 — 안쪽 원(::before, inset 4px)과 같은 자리 · 같은 원으로 잘라 글자 뒤에 반투명하게.
    링(회색 테두리) 밖으로는 나가지 않는다. 글자는 바탕색 그림자로 이미지 위에서도 읽히게 */
 .tcard__cximg { position: absolute; inset: 4px; border-radius: 50%; overflow: hidden; pointer-events: none;
