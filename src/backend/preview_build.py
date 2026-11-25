@@ -298,6 +298,7 @@ def build_preview(
             else:
                 continue  # live_state="none" 은 처리 안 함 (이미 archive 됨)
 
+        item["video_channel_id"] = video.channel_id   # (v4.11.21) 영상이 열리는 채널 — 취소 판정 후보 설명(개인 채널 · 외부 채널)
         # 프리미어 표시는 방송 전 판정(VideoInfo.is_premiere — upcoming 에서만 참)을 이어 붙여 방송 중 · 종료 뒤에도 유지한다.
         item["is_premiere"] = bool(getattr(video, "is_premiere", False) or item.get("is_premiere", False))
 

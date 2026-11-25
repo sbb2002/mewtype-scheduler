@@ -4294,6 +4294,27 @@ def _kst_label(iso: str | None) -> str:
         return "시각 미정"
 
 
+def _cand_fact(item: dict, channel_key: str, cfg: dict) -> str:
+    """(v4.11.21) 취소 · 변경 판정 후보 줄에 붙이는 **데이터에 있는 사실** — 합동 멤버 · 방송이 열리는 채널 종류. 표현 규칙은 두지 않는다.
+    계기(2026-11-26 실험): 유노 「今日の個人配信はお休み」 에 후보 「11/25 20:00 パルカNEWS…」(유노 호스트 · 외부 채널 합동)를 주면
+    8/8 그 방송을 취소했고, 「미네츠키 리츠와 합동 · 외부 채널 방송(멤버 개인 채널 아님)」 을 붙이면 8/8 유지. 진짜 취소 · 변경 3건은 붙여도 6/6 그대로.
+    문구는 실험한 그대로 — 바꾸면 다시 시험할 것."""
+    chs = cfg.get("channels") or {}
+    parts = []
+    if item.get("collab_with"):
+        parts.append(" · ".join((chs.get(k) or {}).get("name_ko", k) for k in item["collab_with"]) + "와 합동")
+    vch = item.get("video_channel_id")
+    if item.get("video_id"):
+        if vch:   # 옛 항목(필드 생기기 전)은 다음 수집이 채울 때까지 채널 사실을 붙이지 않는다
+            own = (chs.get(channel_key) or {}).get("channel_id")
+            ours = {m.get("channel_id") for m in chs.values()}
+            parts.append("본인 개인 채널 방송" if vch == own else
+                         "다른 멤버 · 그룹 채널 방송" if vch in ours else "외부 채널 방송(멤버 개인 채널 아님)")
+    elif item.get("host") != "group":
+        parts.append("본인 개인 채널 방송(영상 미확정)")   # URL 없는 예고는 그 멤버 채널 주소를 가리킨다(자리표시)
+    return " · ".join(parts)
+
+
 def _detect_broadcast_change(raw: str, channel_key: str, now_iso: str, items: list[dict], *,
                              quote: str | None = None, only_ids: list[str] | None = None) -> dict | None:
     """(v4a) 글에서 방송 취소·변경을 감지하고 **영향받는 예고를 선택**한다(자동 인입 · 관리 페이지 공용).
@@ -4331,9 +4352,11 @@ def _detect_broadcast_change(raw: str, channel_key: str, now_iso: str, items: li
     except (ValueError, AttributeError):
         now_dt = datetime.now(KST)
     now_label = f"{now_dt.strftime('%m/%d')}({_DOW_KO[now_dt.weekday()]}) {now_dt.strftime('%H:%M')}"
+    _cfg = _load_channels_config()
     res = LLMClient(groq_key).broadcast_change_targets(
         raw, [{"id": c["id"], "when": _kst_label(c.get("scheduled_start")),
-               "title": (c.get("title_ko") or c.get("title") or "(제목 없음)")[:60]} for c in cands], now_label,
+               "title": " | ".join(x for x in ((c.get("title_ko") or c.get("title") or "(제목 없음)")[:60],
+                                              _cand_fact(c, channel_key, _cfg)) if x)} for c in cands], now_label,
         quote_ja=quote)
     if res is None:
         return None
@@ -9245,7 +9268,7 @@ if __name__ == "__main__":
                 pass
             def broadcast_change_targets(self, text, cands, now_label, quote_ja=None):
                 _FakeChangeLLM._CALLS.append({"text": text, "quote": quote_ja, "ids": [c["id"] for c in cands],
-                                              })
+                                              "titles": [c["title"] for c in cands]})
                 r = dict(self._RESULT)
                 r.setdefault("target_ids", [c["id"] for c in cands] if r["action"] != "none" else [])
                 r.setdefault("reason", "self-test")
@@ -9380,6 +9403,23 @@ if __name__ == "__main__":
             _maybe_broadcast_change(gcx, "今日は休みます", "ritsu", _NOW_R, _CFG_RITSU)
             assert not _FakeChangeLLM._CALLS, "취소됨 예고만 남았는데 LLM 호출"
             print("[OK] (v4.11.21 c-1) 「취소됨」 예고는 판정 후보에서 빠진다 · 그것만 남으면 LLM 0회")
+            _fc = {"channels": {"yuno": {"name_ko": "센고쿠 유노", "channel_id": "UCyuno"},
+                                "ritsu": {"name_ko": "미네츠키 리츠", "channel_id": "UCritsu"},
+                                "group": {"name_ko": "그룹", "channel_id": "UCgroup"}}}
+            assert _cand_fact({"video_id": "v", "video_channel_id": "UCext", "collab_with": ["ritsu"]}, "yuno", _fc) \
+                == "미네츠키 리츠와 합동 · 외부 채널 방송(멤버 개인 채널 아님)"
+            assert _cand_fact({"video_id": "v", "video_channel_id": "UCyuno"}, "yuno", _fc) == "본인 개인 채널 방송"
+            assert _cand_fact({"video_id": "v", "video_channel_id": "UCritsu"}, "yuno", _fc) == "다른 멤버 · 그룹 채널 방송"
+            assert _cand_fact({"video_id": None}, "yuno", _fc) == "본인 개인 채널 방송(영상 미확정)"
+            assert _cand_fact({"video_id": "v"}, "yuno", _fc) == "", "채널 모르는 옛 영상 항목은 채널 사실 없음"
+            assert _cand_fact({"video_id": None, "host": "group", "collab_with": ["ritsu"]}, "yuno", _fc) == "미네츠키 리츠와 합동"
+            _FakeChangeLLM._CALLS.clear()
+            _FakeChangeLLM._RESULT = {"action": "none", "when": None}
+            gfc = _FakeGH()
+            gfc.store[_PREVIEW_PATH] = {"items": [dict(_RITSU_ITEM, title="T", title_ko=None, video_id=None, url=None)]}
+            _maybe_broadcast_change(gfc, "今日は休みます", "ritsu", _NOW_R, _CFG_RITSU)
+            assert _FakeChangeLLM._CALLS and _FakeChangeLLM._CALLS[0]["titles"] == ["T | 본인 개인 채널 방송(영상 미확정)"], _FakeChangeLLM._CALLS
+            print("[OK] (v4.11.21 c-2) 판정 후보 줄에 사실(합동 멤버 · 채널 종류)")
 
             # c-3. (v4.11.21) 글보다 늦게 생긴 예고 — 2026-11-25 유노 18:44 취소 글 → 19:00 공식 스케줄 22:00.
             # 새 예고를 그 멤버의 최근 글과 하나씩(최신부터) 대 보고, 취소면 그 글을 가리켜 「취소됨」 표시

@@ -699,6 +699,7 @@ def build_item_from_video(info, *, channel_key: str, host: str | None,
         info_source="personal",
         info_at=now_iso,
     )
+    item["video_channel_id"] = info.channel_id   # (v4.11.21) 영상이 열리는 채널 — 외부 채널 합동을 취소 판정이 알아보게
 
     if item["state"] == "announced":
         promoted = preview.promote_state(item)
@@ -744,6 +745,8 @@ def merge_video_confirmed(prev_items: list[dict], video_id: str, new_item: dict,
         cur["needs_tl"] = bool(new_item.get("title"))
     cur["thumbnail"] = new_item.get("thumbnail") or cur.get("thumbnail")
     cur["url"] = new_item.get("url") or cur.get("url")
+    if new_item.get("video_channel_id"):   # (v4.11.21)
+        cur["video_channel_id"] = new_item["video_channel_id"]
     api_old, api_new = cur.get("api_start_seen"), new_item.get("api_start_seen")
     cur["api_start_seen"] = api_new
     # (v4.7.2) 자동 수정 권한이 YT · X&YT 일 때만 API 확정 시각으로 덮는다. 출처별:
