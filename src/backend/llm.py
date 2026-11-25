@@ -759,7 +759,8 @@ class LLMClient:
             return None
         return reading
 
-    def participation(self, text_ja: str, *, member_name: str) -> bool | None:
+    def participation(self, text_ja: str, *, member_name: str, name_ja: str = "",
+                      quote_ja: str | None = None) -> bool | None:
         """
         (v3.6) 트윗 원문이 `member_name` 이 직접 출연·참여하는 콘텐츠를 가리키는지 판정.
 
@@ -771,6 +772,11 @@ class LLMClient:
         Args:
             text_ja: 트윗 원문(원어 그대로 — 마스킹만 적용, 번역은 안 함)
             member_name: 참여 여부를 판정할 멤버 이름(한국어 표기)
+            name_ja: (v4.11.21) 그 멤버의 일본어 정식 표기(`x_names`) — 원문 · 인용문은 일본어다
+            quote_ja: (v4.11.21) 이 글이 인용한 글(출연자 명단이 여기에만 있는 경우가 많다) — 참고용
+
+        (v4.11.21) 이 글은 **그 멤버 본인이 쓴 글**이라는 사실을 알려 준다. 전엔 「'미네츠키 리츠'가 참여하나」만 물어,
+        본인이 1인칭(「律と一緒に」)으로 쓴 글 · 출연자 명단이 인용문에만 있는 글을 「참여 아님」으로 판정했다(2026-11-25 파루카NEWS 재생).
 
         Returns:
             True/False 또는 5회 모두 실패 시 None
@@ -780,11 +786,16 @@ class LLMClient:
             return None
 
         masked_text, _mapping = _mask_glossary(text_ja or "")
+        who = f"'{member_name}'" + (f"(일본어 표기 {name_ja})" if name_ja else "")
+        ref = ""
+        if quote_ja:
+            masked_quote, _ = _mask_glossary(quote_ja)
+            ref = f"\n\n(이 게시물이 인용한 글 — 참고용)\n{masked_quote[:800]}"
         prompt = (
-            f"다음은 X(트위터) 게시물 원문이다. 이 글이 '{member_name}'이(가) 직접 "
+            f"다음은 {who} 본인이 X(트위터)에 올린 게시물 원문이다. 이 글이 작성자 본인이 직접 "
             f"출연·참여하는 영상/콘텐츠를 홍보 또는 언급하는 글인지 판단하라. "
             f"단순 감상·잡담·무관한 리트윗이면 false. JSON 포맷만 출력.\n\n"
-            f"원문:\n{masked_text}\n\n출력:\n"
+            f"원문:\n{masked_text}{ref}\n\n출력:\n"
             f'{{"participates": <true 또는 false>}}'
         )
 
@@ -984,18 +995,14 @@ class LLMClient:
             masked_quote, _ = _mask_glossary(quote_ja)
             masked_text += ("\n\n(이 게시물이 인용한 글 — 어느 방송 이야기인지 알아보는 참고용. 판정 대상은 위 게시물이다)\n"
                             f"{masked_quote[:600]}")
-        # (v4.11.21) about = 그 방송의 사실(출처 · 영상 여부 · 함께하는 멤버 · 근거 글) — 어떤 방송인지 알아야 범위를 맞춘다
-        lines = "\n".join(f"- id={c['id']} | {c['when']} | {c['title']}" + (f" | {c['about']}" if c.get("about") else "")
-                          for c in candidates)
+        lines = "\n".join(f"- id={c['id']} | {c['when']} | {c['title']}" for c in candidates)
         prompt = (
             f"다음은 유메미타 멤버가 올린 X(트위터) 게시물 원문이다.\n\n{masked_text}\n\n"
             f"지금(KST)은 {now_kst} 이다. 이 멤버가 예고해 둔 방송 목록(KST):\n{lines}\n\n"
             f"질문: 이 글이 위 방송 중 일부 또는 전부를 취소하거나 일정을 변경한다고 알리는 글인가?\n"
             f"- 취소라면 action=\"del\". target_ids 에는 취소되는 방송의 id 만 넣는다.\n"
             f"  · 범위 표현이 없으면(예: \"오늘 방송 쉽니다\") 그 날짜(오늘/내일 등)의 방송을 모두 넣는다.\n"
-            f"  · 범위가 있으면(아침/낮/밤, 시각, 방송 제목·내용·종류) 그에 맞는 방송만 넣는다. "
-            f"각 방송이 어떤 방송인지는 목록의 설명(출처 · 근거 글 등)을 보고 판단한다.\n"
-            f"  · 글이 그날 할 방송을 일부로 한정하면, 목록에서 그 밖의 그날 방송은 취소로 본다.\n"
+            f"  · 범위가 있으면(아침/낮/밤, 시각, 방송 제목·내용) 그에 맞는 방송만 넣는다.\n"
             f"- 새 날짜/시각으로 변경(연기)이라면 action=\"edit\", when 에 KST 기준 새 일정을 "
             f"\"MM/DD HH:MM\" 형식으로 채우고 target_ids 에 변경되는 방송의 id 를 넣는다.\n"
             f"- 취소도 변경도 아니면(평소 예고·잡담·후기 등) 또는 목록의 어떤 방송인지 알 수 없으면 "

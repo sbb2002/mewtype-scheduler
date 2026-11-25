@@ -98,6 +98,32 @@ def _carry_collab(broadcast: dict, prev_entry: dict | None) -> None:
     broadcast["kind"] = "collab"
 
 
+def _supersedes(video: dict, placeholder: dict) -> bool:
+    """영상 예고가 URL 없는 자리표시(같은 방송)를 대신하나 — 참여자가 겹치고 예정 시각이 ±45분 안.
+    (v4.11.21) 영상의 참여자에 게스트(collab_with)도 넣는다 — 전엔 영상 주인 채널만 봐서, 리츠 주최 외부 영상에
+    게스트로 들어간 유노의 20:00 자리표시가 「유노 개인 방송」으로 남아 엉뚱하게 취소됐다(2026-11-25)."""
+    ss, ann = video.get("scheduled_start"), placeholder.get("scheduled_start")
+    return bool(video.get("video_id") and not video.get("cancelled") and ss and ann
+                and placeholder.get("host") != "group"
+                and {video.get("channel_key"), *(video.get("collab_with") or [])}
+                & {placeholder.get("channel_key"), *(placeholder.get("collab_with") or [])}
+                and abs(_age_sec(ss, ann)) <= SCHEDULED_SUPERSEDE_SEC)
+
+
+def absorb_placeholders(items: list, video: dict) -> list:
+    """(v4.11.21) 영상 예고가 생기거나 참여자가 늘어난 **그 자리에서** 같은 방송의 자리표시를 흡수한다(다음 수집을 기다리지 않는다 —
+    그 사이 들어온 취소 글이 자리표시를 엉뚱하게 고를 수 있다). 흡수 = 자리표시를 빼고 참여자 · 회원 전용 · 예고 시각을 영상에 넘긴다.
+    `video` 는 `items` 안의 참조여야 한다(제자리 갱신). 취소 표시된 자리표시는 건드리지 않는다."""
+    out = []
+    for it in items:
+        if (it is not video and not it.get("video_id") and it.get("state") == "announced"
+                and not it.get("cancelled") and _supersedes(video, it)):
+            _carry_collab(video, it)
+            continue
+        out.append(it)
+    return out
+
+
 def _keep_cancelled(item: dict, items: list, gone_items: list, now_iso: str) -> None:
     """(v4.11.14) 취소된 예고 — 수집 결과로 상태 · 시각을 바꾸지 않고 그날 끝(KST 04:00)까지 그대로 싣는다.
     지나면 아카이브로 옮긴다. 확인(wake)은 예약하지 않는다."""
@@ -352,16 +378,11 @@ def build_preview(
         # 참여자(channel_key ∪ collab_with) 중 아무 채널에나 실물이 ±45분(v3.8.10, 구 4h) 안에 뜨면 supersede.
         # host="group"(出演情報, 외부 이벤트)은 예외 — TTL 로만 소멸.
         if announced_ss and _host != "group":
-            _chans = {item.get("channel_key"), *(item.get("collab_with") or [])}
             # (v4.0.8) 창 안 실물이 여럿이면 시각이 가장 가까운 것 — 처음 만난 것을 고르면 영상 처리 순서에 따라
             # 회원 전용 · 합동 정보가 옆 방송(예: 20:00 회원 자리표시 → 20:30 일반 영상)으로 넘어갔다
+            # (v4.11.21) 판정은 `_supersedes` — 영상의 게스트도 참여자로 본다
             _hit = min(
-                (it for it in items
-                 if it.get("video_id")
-                 and not it.get("cancelled")
-                 and it.get("channel_key") in _chans
-                 and it.get("scheduled_start")
-                 and abs(_age_sec(it["scheduled_start"], announced_ss)) <= SCHEDULED_SUPERSEDE_SEC),
+                (it for it in items if _supersedes(it, item)),
                 key=lambda it: abs(_age_sec(it["scheduled_start"], announced_ss)),
                 default=None,
             )
@@ -1243,6 +1264,26 @@ if __name__ == "__main__":
     _keep_ph = build_preview(channels_cfg, {}, {"items": [_ph]}, "2026-10-24T17:00:00Z")[0]["items"]   # expires_at 지남
     assert [i["id"] for i in _keep_ph] == [_ph["id"]], "URL 없는 취소 예고가 TTL 로 사라짐"
     print("✓ (v4.11.14) 취소된 예고 — 수집이 안 바꿈 · wake 없음 · TTL 무시 · 그날 끝(04:00 KST)에 아카이브")
+
+    # (v4.11.21) 게스트로 들어간 멤버의 자리표시도 흡수 — 2026-11-25 리츠 주최 외부 영상(파루카NEWS) · 유노 20:00 자리표시
+    _vx = {"id": "pvV", "channel_key": "ritsu", "video_id": "zdFXJG5tRWc", "state": "upcoming",
+           "scheduled_start": "2026-11-25T11:00:00Z", "collab_with": ["yuno"], "kind": "collab"}
+    _y20 = {"id": "pvY20", "channel_key": "yuno", "state": "announced", "scheduled_start": "2026-11-25T11:00:00Z",
+            "collab_with": [], "video_id": None}
+    _y22 = dict(_y20, id="pvY22", scheduled_start="2026-11-25T13:00:00Z")          # 2시간 뒤 — 다른 방송
+    _ycx = dict(_y20, id="pvYcx", cancelled={"at": "x"})                              # 취소 표시는 그대로
+    _n2 = dict(_y20, id="pvN", channel_key="nonoka")                                   # 참여자 아님
+    _out = absorb_placeholders([_vx, _y20, _y22, _ycx, _n2], _vx)
+    assert [i["id"] for i in _out] == ["pvV", "pvY22", "pvYcx", "pvN"], _out
+    assert _vx["announced_start"] == "2026-11-25T11:00:00Z" and _vx["collab_with"] == ["yuno"]
+    _vs = dict(_vx, collab_with=None, kind=None)
+    assert [i["id"] for i in absorb_placeholders([_vs, dict(_y20)], _vs)] == ["pvV", "pvY20"], "게스트 아니면 흡수 안 함"
+    _tick = build_preview(channels_cfg, {}, {"items": [dict(_vx, last_updated="t", first_seen="t", source="personal",
+                                                             url="https://www.youtube.com/watch?v=zdFXJG5tRWc"),
+                                                        dict(_y20, expires_at="2026-11-25T14:00:00Z")]},
+                          "2026-11-25T09:30:00Z")[0]["items"]
+    assert "pvY20" not in [i["id"] for i in _tick], "수집도 게스트 멤버의 자리표시를 흡수"
+    print("✓ (v4.11.21) 외부 영상 게스트 멤버의 자리표시 흡수 — 그 자리 · 수집 둘 다, 취소 표시 · 다른 시각 · 비참여자는 유지")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 17개 self-test scenarios passed ✓ (v4a)")
