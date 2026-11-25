@@ -808,6 +808,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 - **변경 판정 대상**(`telegram_app._maybe_broadcast_change`, 개인 트윗마다): (v4.11.21) **글 표현으로 거르는 문은 없다** — 전엔 본문에 `配信` · 변경어 정규식
   (`_CHANGE_WORD_RE`) · 후보 영상 id 인용 중 하나가 있어야 LLM 에 갔다. 목록에 없는 표현은 판정조차 못 받으므로(2026-11-25 운영자 지시 — 정규식 방식 사절) 지웠다.
   후보(권한 x_yt 인 활성 예고)가 없으면 LLM 을 부르지 않는다 — 비용 상한은 이것뿐이다.
+  (v4.11.21) 이미 「취소됨」(`cancelled`) 표시된 예고는 후보에서 뺀다 — 취소 표시는 `state` 를 그대로 두므로 그날 끝(KST 04:00)까지 후보에 남아 있었다.
   인용문은 `llm.broadcast_change_targets(quote_ja=…)` 로 본문 뒤에 참고용(600자)으로 붙고, 판단 기록 `input` 에도 남아 재판단 때 쓰인다.
 - **늦게 생긴 예고 재확인**(v4.11.21, `telegram_app._recheck_new_items`): 공식 일일 스케줄 · 본인 텍스트 예고 · 트윗 속 URL 예고가 **새 예고**(`first_seen == now`)를 만들면,
   그 멤버의 최근 24h 글(이 예고를 만든 글 제외)을 **하나씩 최신부터** 1회 판정(`_auto_edit_once_core(tweets=[글])`)에 넣고 취소 · 변경이 나오면 멈춘다(최대 4건).

@@ -4278,10 +4278,11 @@ _DOW_KO = "월화수목금토일"
 def _change_candidates(items: list[dict], channel_key: str, limit: int = 8) -> list[dict]:
     """(v4a) 취소·변경 판정 후보 = channel_key 가 **호스트**인 활성(announced~live) 예고, 시각 오름차순 최대 limit 개.
     게스트(collab_with)로만 엮인 예고는 대상 아님(2026-09-22 확정).
-    (v4.7.2) 자동 수정 권한이 X&YT 인 예고만 — 권한이 YT · 수동이면 트윗으로 취소 · 변경하지 않는다."""
+    (v4.7.2) 자동 수정 권한이 X&YT 인 예고만 — 권한이 YT · 수동이면 트윗으로 취소 · 변경하지 않는다.
+    (v4.11.21) 이미 「취소됨」 표시된 예고는 빼고 — 취소 표시는 상태(state)를 그대로 둬서 그날 끝까지 후보에 남아 있었다."""
     act = [it for it in (items or [])
            if it.get("channel_key") == channel_key and it.get("state") in xtweet._ACTIVE_STATES
-           and preview_mod.allows_tweet_edit(it)]
+           and not it.get("cancelled") and preview_mod.allows_tweet_edit(it)]
     act.sort(key=lambda x: x.get("scheduled_start") or "9999-99-99T99:99:99Z")
     return act[:limit]
 
@@ -9371,6 +9372,14 @@ if __name__ == "__main__":
             assert len(_FakeChangeLLM._CALLS) == 1, _FakeChangeLLM._CALLS
             assert gc.store[_PREVIEW_PATH]["items"] == [_RITSU_ITEM]
             print("[OK] (v4.11.21 c) 配信 · 변경어 없는 글도 LLM 판정 · none → 무변화")
+            _cx_it = dict(_RITSU_ITEM, id="pvCX", cancelled={"at": _NOW_R, "by": "tweet"})
+            assert [c["id"] for c in _change_candidates([_cx_it, dict(_RITSU_ITEM)], "ritsu")] == [_RITSU_ITEM["id"]]
+            _FakeChangeLLM._CALLS.clear()
+            gcx = _FakeGH()
+            gcx.store[_PREVIEW_PATH] = {"items": [_cx_it]}
+            _maybe_broadcast_change(gcx, "今日は休みます", "ritsu", _NOW_R, _CFG_RITSU)
+            assert not _FakeChangeLLM._CALLS, "취소됨 예고만 남았는데 LLM 호출"
+            print("[OK] (v4.11.21 c-1) 「취소됨」 예고는 판정 후보에서 빠진다 · 그것만 남으면 LLM 0회")
 
             # c-3. (v4.11.21) 글보다 늦게 생긴 예고 — 2026-11-25 유노 18:44 취소 글 → 19:00 공식 스케줄 22:00.
             # 새 예고를 그 멤버의 최근 글과 하나씩(최신부터) 대 보고, 취소면 그 글을 가리켜 「취소됨」 표시
