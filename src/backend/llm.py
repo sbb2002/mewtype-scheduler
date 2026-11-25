@@ -759,7 +759,8 @@ class LLMClient:
             return None
         return reading
 
-    def participation(self, text_ja: str, *, member_name: str) -> bool | None:
+    def participation(self, text_ja: str, *, member_name: str, name_ja: str = "",
+                      quote_ja: str | None = None) -> bool | None:
         """
         (v3.6) 트윗 원문이 `member_name` 이 직접 출연·참여하는 콘텐츠를 가리키는지 판정.
 
@@ -771,6 +772,11 @@ class LLMClient:
         Args:
             text_ja: 트윗 원문(원어 그대로 — 마스킹만 적용, 번역은 안 함)
             member_name: 참여 여부를 판정할 멤버 이름(한국어 표기)
+            name_ja: (v4.11.21) 그 멤버의 일본어 정식 표기(`x_names`) — 원문 · 인용문은 일본어다
+            quote_ja: (v4.11.21) 이 글이 인용한 글(출연자 명단이 여기에만 있는 경우가 많다) — 참고용
+
+        (v4.11.21) 이 글은 **그 멤버 본인이 쓴 글**이라는 사실을 알려 준다. 전엔 「'미네츠키 리츠'가 참여하나」만 물어,
+        본인이 1인칭(「律と一緒に」)으로 쓴 글 · 출연자 명단이 인용문에만 있는 글을 「참여 아님」으로 판정했다(2026-11-25 파루카NEWS 재생).
 
         Returns:
             True/False 또는 5회 모두 실패 시 None
@@ -780,11 +786,16 @@ class LLMClient:
             return None
 
         masked_text, _mapping = _mask_glossary(text_ja or "")
+        who = f"'{member_name}'" + (f"(일본어 표기 {name_ja})" if name_ja else "")
+        ref = ""
+        if quote_ja:
+            masked_quote, _ = _mask_glossary(quote_ja)
+            ref = f"\n\n(이 게시물이 인용한 글 — 참고용)\n{masked_quote[:800]}"
         prompt = (
-            f"다음은 X(트위터) 게시물 원문이다. 이 글이 '{member_name}'이(가) 직접 "
+            f"다음은 {who} 본인이 X(트위터)에 올린 게시물 원문이다. 이 글이 작성자 본인이 직접 "
             f"출연·참여하는 영상/콘텐츠를 홍보 또는 언급하는 글인지 판단하라. "
             f"단순 감상·잡담·무관한 리트윗이면 false. JSON 포맷만 출력.\n\n"
-            f"원문:\n{masked_text}\n\n출력:\n"
+            f"원문:\n{masked_text}{ref}\n\n출력:\n"
             f'{{"participates": <true 또는 false>}}'
         )
 

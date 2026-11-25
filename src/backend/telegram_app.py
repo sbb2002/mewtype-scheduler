@@ -3443,6 +3443,12 @@ def _url_confirmed_commit(gh, video_id: str, new_item: dict, next_check_at: str 
                 if _n is not None:
                     _n["src_url"] = src_url
                     changed = True
+            # (v4.11.21) 같은 방송의 자리표시를 지금 흡수 — 다음 수집까지 남겨 두면 그 사이 취소 글이 자리표시를 고른다
+            _v = next((i for i in items if i.get("video_id") == video_id), None)
+            if _v is not None:
+                _n_before = len(items)
+                items = preview_build.absorb_placeholders(items, _v)
+                changed = changed or len(items) != _n_before
             merged = dict(prev)
             merged["items"] = items
             merged["generated_at"] = now_iso
@@ -4237,7 +4243,6 @@ def _confirm_relay_rows_collab(gh, raw: str, rows: list[dict], channels_cfg: dic
     return rows
 
 
-_BROADCAST_KEYWORD = "配信"
 _MMDD_HHMM_RE = re.compile(r"(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})")
 
 
@@ -4273,10 +4278,11 @@ _DOW_KO = "월화수목금토일"
 def _change_candidates(items: list[dict], channel_key: str, limit: int = 8) -> list[dict]:
     """(v4a) 취소·변경 판정 후보 = channel_key 가 **호스트**인 활성(announced~live) 예고, 시각 오름차순 최대 limit 개.
     게스트(collab_with)로만 엮인 예고는 대상 아님(2026-09-22 확정).
-    (v4.7.2) 자동 수정 권한이 X&YT 인 예고만 — 권한이 YT · 수동이면 트윗으로 취소 · 변경하지 않는다."""
+    (v4.7.2) 자동 수정 권한이 X&YT 인 예고만 — 권한이 YT · 수동이면 트윗으로 취소 · 변경하지 않는다.
+    (v4.11.21) 이미 「취소됨」 표시된 예고는 빼고 — 취소 표시는 상태(state)를 그대로 둬서 그날 끝까지 후보에 남아 있었다."""
     act = [it for it in (items or [])
            if it.get("channel_key") == channel_key and it.get("state") in xtweet._ACTIVE_STATES
-           and preview_mod.allows_tweet_edit(it)]
+           and not it.get("cancelled") and preview_mod.allows_tweet_edit(it)]
     act.sort(key=lambda x: x.get("scheduled_start") or "9999-99-99T99:99:99Z")
     return act[:limit]
 
@@ -4286,6 +4292,27 @@ def _kst_label(iso: str | None) -> str:
         return datetime.fromisoformat((iso or "").replace("Z", "+00:00")).astimezone(KST).strftime("%m/%d %H:%M")
     except (ValueError, AttributeError):
         return "시각 미정"
+
+
+def _cand_fact(item: dict, channel_key: str, cfg: dict) -> str:
+    """(v4.11.21) 취소 · 변경 판정 후보 줄에 붙이는 **데이터에 있는 사실** — 합동 멤버 · 방송이 열리는 채널 종류. 표현 규칙은 두지 않는다.
+    계기(2026-11-26 실험): 유노 「今日の個人配信はお休み」 에 후보 「11/25 20:00 パルカNEWS…」(유노 호스트 · 외부 채널 합동)를 주면
+    8/8 그 방송을 취소했고, 「미네츠키 리츠와 합동 · 외부 채널 방송(멤버 개인 채널 아님)」 을 붙이면 8/8 유지. 진짜 취소 · 변경 3건은 붙여도 6/6 그대로.
+    문구는 실험한 그대로 — 바꾸면 다시 시험할 것."""
+    chs = cfg.get("channels") or {}
+    parts = []
+    if item.get("collab_with"):
+        parts.append(" · ".join((chs.get(k) or {}).get("name_ko", k) for k in item["collab_with"]) + "와 합동")
+    vch = item.get("video_channel_id")
+    if item.get("video_id"):
+        if vch:   # 옛 항목(필드 생기기 전)은 다음 수집이 채울 때까지 채널 사실을 붙이지 않는다
+            own = (chs.get(channel_key) or {}).get("channel_id")
+            ours = {m.get("channel_id") for m in chs.values()}
+            parts.append("본인 개인 채널 방송" if vch == own else
+                         "다른 멤버 · 그룹 채널 방송" if vch in ours else "외부 채널 방송(멤버 개인 채널 아님)")
+    elif item.get("host") != "group":
+        parts.append("본인 개인 채널 방송(영상 미확정)")   # URL 없는 예고는 그 멤버 채널 주소를 가리킨다(자리표시)
+    return " · ".join(parts)
 
 
 def _detect_broadcast_change(raw: str, channel_key: str, now_iso: str, items: list[dict], *,
@@ -4325,9 +4352,11 @@ def _detect_broadcast_change(raw: str, channel_key: str, now_iso: str, items: li
     except (ValueError, AttributeError):
         now_dt = datetime.now(KST)
     now_label = f"{now_dt.strftime('%m/%d')}({_DOW_KO[now_dt.weekday()]}) {now_dt.strftime('%H:%M')}"
+    _cfg = _load_channels_config()
     res = LLMClient(groq_key).broadcast_change_targets(
         raw, [{"id": c["id"], "when": _kst_label(c.get("scheduled_start")),
-               "title": (c.get("title_ko") or c.get("title") or "(제목 없음)")[:60]} for c in cands], now_label,
+               "title": " | ".join(x for x in ((c.get("title_ko") or c.get("title") or "(제목 없음)")[:60],
+                                              _cand_fact(c, channel_key, _cfg)) if x)} for c in cands], now_label,
         quote_ja=quote)
     if res is None:
         return None
@@ -4384,29 +4413,14 @@ def _terminate_broadcast(gh, item: dict, now_iso: str, action: str, cancel: dict
     return bool(removed)
 
 
-_CHANGE_WORD_RE = re.compile(r"変更|延期|中止|休み|おやすみ|お休み|見送|ずら|ズラ|遅ら|遅れ|リスケ|取りやめ|取り止め|キャンセル|休配")
-
-
-def _quote_video_ids(quote: str | None) -> set[str]:
-    """(v4.7.2) 인용문 안의 YouTube 영상 id 들 — 인용한 예고를 가리키는지 보는 근거."""
-    if not quote or xrelay is None:
-        return set()
-    return {m.group(1) for m in xrelay.YT_VIDEO_RE.finditer(xrelay.normalize(quote))}
-
-
-def _change_gate_text(raw: str | None, quote: str | None) -> bool:
-    """(v4.7.2) 글 자체(I/O 없음)에 취소·변경 신호가 있나: 配信 · 변경어 · 인용문에 YouTube 영상 URL."""
-    txt = raw or ""
-    return _BROADCAST_KEYWORD in txt or bool(_CHANGE_WORD_RE.search(txt)) or bool(_quote_video_ids(quote))
-
-
 def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
                             channels_cfg: dict, *, via: str = "ingest", tag: str | None = None,
                             quote: str | None = None, tweet_id: str | None = None,
                             tweet_url: str | None = None) -> None:
-    """(v3.8.7) 개인 트윗에 `配信` 키워드 · 변경어 · 후보 예고를 가리키는 인용 URL 중 하나가 있으면
-    (v4.7.2 확장), 그 멤버가 **호스트**인 기존 예고(자동 수정 권한 X&YT 인 것만)를
+    """(v3.8.7) 개인 트윗이 그 멤버가 **호스트**인 기존 예고(자동 수정 권한 X&YT 인 것만)를
     취소·변경하는 글인지 LLM 으로 판정해 반영한다.
+    (v4.11.21) 글 표현으로 거르는 문(配信 · 변경어 정규식)을 없앴다 — 「パルワールドだけ」처럼 목록에 없는 표현은
+    LLM 까지 못 갈 수 있었다. 후보 예고가 있으면 글은 전부 판정한다(표현 해석은 LLM, 코드는 후보의 사실만 채운다).
 
     실측 계기(2026-09-22): 노노카가 당일 방송 취소를 공지했는데, 어떤 로직도 기존
     예고를 내리지 않았다 — 그 뒤 그 날의 옛 공식 그룹 공지가 재-ingest 되면서 이미
@@ -4417,10 +4431,7 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
     재사용 — state="none" 패치는 그 안에서 `_activate_state_edit`(즉시 제거+아카이브)
     까지 자동으로 이어진다.
     """
-    # (v4.7.2) 게이트 = 본문에 配信 · 변경어(_CHANGE_WORD_RE) · 인용문에 이 멤버 후보 예고의 영상 URL 중 하나.
-    # 글 자체에 신호가 없으면 preview 조회도 안 한다. 사용자 판단(_review_forced)은 게이트를 건너뛴다.
-    forced = _review_forced("change") is not None
-    if xtweet is None or (not forced and not _change_gate_text(raw, quote)):
+    if xtweet is None:
         return
     try:
         prev, _ = gh.read_json(_PREVIEW_PATH)
@@ -4431,9 +4442,6 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
     cands = _change_candidates(items, channel_key)
     if not cands:
         return   # 취소/변경할 활성 예고(자동 수정 권한 X&YT) 자체가 없음 — LLM 호출 비용 절감
-    if not forced and _BROADCAST_KEYWORD not in (raw or "") and not _CHANGE_WORD_RE.search(raw or "") \
-            and not (_quote_video_ids(quote) & {c.get("video_id") for c in cands}):
-        return   # 변경어도 配信 도 없고 인용 URL 도 후보와 무관 — 일상 트윗
 
     # (v4a) 영향받는 방송을 LLM 이 후보 목록에서 **선택** — "오늘 휴방"이면 오늘 방송 전부, "아침만"이면 그것만.
     # 삭제는 `/del` terminate 와 동일(삭제 + 영상 URL 12h 재등록 차단 — 안 하면 다음 수집이 되살린다)
@@ -4541,7 +4549,51 @@ def _auto_edit_once(gh, item_id: str, level: str, now_iso: str) -> str:
         return f"1회 동작 실패: {type(e).__name__}"
 
 
-def _auto_edit_once_core(gh, item_id: str, level: str, now_iso: str) -> str:
+_RECHECK_LOOKBACK_SEC = 24 * 3600
+_RECHECK_MAX_TWEETS = 4   # 새 예고 하나당 LLM 상한
+
+
+def _recheck_new_items(gh, now_iso: str, *, via: str = "ingest") -> None:
+    """(v4.11.21) 이번 인입으로 **새로 생긴** 예고(first_seen == now_iso)를 그 멤버가 앞서 올린 글과 대 본다.
+
+    취소 · 변경 판정은 글이 들어올 때 그때 있던 예고만 본다 — 글보다 늦게 생긴 예고는 영영 비교되지 않았다
+    (2026-11-25 유노 18:44 「今日の個人配信はお休み」 → 19:00 공식 스케줄이 22:00 을 새로 올려 그대로 남음).
+    예고가 생길 때도 같은 질문을 던져 순서와 무관하게 만든다. 글 = 그 멤버의 최근 24h 글(이 예고를 만든 글 제외).
+    판정 · 반영은 1회 판정(`_auto_edit_once_core`)을 그대로 쓴다. 글이 없으면 LLM 을 부르지 않는다. 예외는 삼킨다."""
+    try:
+        prev, _ = gh.read_json(_PREVIEW_PATH)
+        items = (prev or {}).get("items", []) or []
+        new = [it for it in items if it.get("first_seen") == now_iso
+               and it in _change_candidates(items, it.get("channel_key") or "")]
+        if not new:
+            return
+        data, _ = gh.read_json(_TWEETS_PATH)
+        now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+        for it in new:
+            src_m = _STATUS_ID_RE.search(it.get("src_url") or "")
+            tws = []
+            for t in ((data or {}).get("tweets") or {}).get(it.get("channel_key")) or []:
+                at = t.get("posted_at") or t.get("received_at") or ""
+                try:
+                    age = (now - datetime.fromisoformat(at.replace("Z", "+00:00"))).total_seconds()
+                except (ValueError, AttributeError):
+                    continue
+                if 0 <= age <= _RECHECK_LOOKBACK_SEC and not (src_m and str(t.get("id")) == src_m.group(1)):
+                    tws.append(t)
+            # 글마다 따로(최신부터) — 「취소됨」 이 가리킬 글이 판정한 그 글이 되게. 취소 · 변경이 나오면 멈춘다
+            tws.sort(key=lambda t: t.get("posted_at") or t.get("received_at") or "", reverse=True)
+            for t in tws[:_RECHECK_MAX_TWEETS]:
+                msg = _auto_edit_once_core(gh, it["id"], "x_yt", now_iso, tweets=[t])
+                _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=it.get("channel_key"), via=via,
+                                detail=f"새 예고 재확인 {_kst_label(it.get('scheduled_start'))} · {t.get('id')} · {msg}"[:200])
+                if msg.startswith(("트윗 판정: 취소", "트윗 판정: 시각 변경")):
+                    break
+    except Exception:  # noqa: BLE001
+        log.exception("새 예고 재확인 실패")
+
+
+def _auto_edit_once_core(gh, item_id: str, level: str, now_iso: str, *, tweets: list | None = None) -> str:
+    """tweets = 판정에 쓸 글(주면 연결된 트윗 대신 이것으로 판정하고 YouTube 단계는 건너뛴다 — `_recheck_new_items`)."""
     prev, _ = gh.read_json(_PREVIEW_PATH)
     items = (prev or {}).get("items", []) or []
     item = next((x for x in items if x.get("id") == item_id), None)
@@ -4554,7 +4606,7 @@ def _auto_edit_once_core(gh, item_id: str, level: str, now_iso: str) -> str:
     done = False   # 트윗 판정으로 시각을 고쳤거나 취소했는가 — 그러면 YouTube 단계 건너뜀
 
     if level == "x_yt":
-        tw = _linked_tweets(gh, item)
+        tw = tweets if tweets is not None else _linked_tweets(gh, item)
         if not tw:
             msgs.append("연결된 트윗 없음")
         else:
@@ -4606,7 +4658,7 @@ def _auto_edit_once_core(gh, item_id: str, level: str, now_iso: str) -> str:
                 msgs.append(f"트윗 판정: 변경 없음 ({(plan.get('reason') or '')[:60]})")
 
     vid = item.get("video_id")
-    if level in ("yt", "x_yt") and vid and not done:
+    if level in ("yt", "x_yt") and vid and not done and tweets is None:
         api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
         if not api_key or YouTubeClient is None:
             msgs.append("YouTube 확인 생략 (API 키 없음)")
@@ -4780,6 +4832,34 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via,
                         detail=f"group-video members {basis} · {','.join(members)} · {video_id}")
 
+    if host_key is None:
+        groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+        _fpart = _review_forced("part") is True       # 사용자 판단 — 참여로 등록(LLM 확인만 건너뜀)
+        if not groq_key and not _fpart:
+            log.info("GROQ_API_KEY 없음 — 외부 채널 URL 참여판정 스킵")
+            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+                      detail="url-schedule skip: GROQ_API_KEY 미설정 — 참여판정 불가, 미등록", via=via)
+            return True
+        author_name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
+        from .llm import LLMClient
+        _ja = (channels_cfg.get("channels", {}).get(channel_key, {}).get("x_names") or [""])[0]
+        ok = True if _fpart else LLMClient(groq_key).participation(raw, member_name=author_name, name_ja=_ja,
+                                                                   quote_ja=quote)
+        if ok is None:
+            # LLM 5회 재시도 모두 실패(infra) — "무관하다고 확인됨"과는 다르다, monitor 에 남긴다.
+            log.info("URL 확정 예고: 외부 채널 + LLM 참여판정 5회 모두 실패 — 미등록")
+            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+                      detail="url-schedule skip: participation() 5회 모두 실패 — 미등록", via=via)
+            return True
+        if ok is not True:
+            log.info("URL 확정 예고: 외부 채널 + LLM 미확인(%s) — 스킵", ok)
+            _llm_record(gh, "participation", channel_key, f"외부 채널 영상 — 참여 아님 · {(info.title or '')[:40]}",
+                        now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote, media=media, video_id=video_id))
+            return True
+        host_key, host, collab_with = channel_key, None, None
+        llm_participation = True
+        # (v4.11.21) 외부 채널도 아래 게스트 탐색을 거친다 — 인용한 외부 공지에 다른 멤버가 출연자로 적힌 경우(11-25 파루카NEWS)
+
     if host_key is not None and host is None:
         # (v3.8.3) 본인 채널 합동 — 제목/원문에 다른 멤버 정식 표기가 있으면 게스트 후보.
         # (v3.8.6) 언급됐다고 곧장 확정하지 않고 LLM 으로 "실제로 같이 나오는 방송인가"
@@ -4799,30 +4879,6 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         merged = [*(collab_with or []), *llm_guests]
         collab_with = merged or None
 
-    if host_key is None:
-        groq_key = os.environ.get("GROQ_API_KEY", "").strip()
-        _fpart = _review_forced("part") is True       # 사용자 판단 — 참여로 등록(LLM 확인만 건너뜀)
-        if not groq_key and not _fpart:
-            log.info("GROQ_API_KEY 없음 — 외부 채널 URL 참여판정 스킵")
-            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
-                      detail="url-schedule skip: GROQ_API_KEY 미설정 — 참여판정 불가, 미등록", via=via)
-            return True
-        author_name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
-        from .llm import LLMClient
-        ok = True if _fpart else LLMClient(groq_key).participation(raw, member_name=author_name)
-        if ok is None:
-            # LLM 5회 재시도 모두 실패(infra) — "무관하다고 확인됨"과는 다르다, monitor 에 남긴다.
-            log.info("URL 확정 예고: 외부 채널 + LLM 참여판정 5회 모두 실패 — 미등록")
-            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
-                      detail="url-schedule skip: participation() 5회 모두 실패 — 미등록", via=via)
-            return True
-        if ok is not True:
-            log.info("URL 확정 예고: 외부 채널 + LLM 미확인(%s) — 스킵", ok)
-            _llm_record(gh, "participation", channel_key, f"외부 채널 영상 — 참여 아님 · {(info.title or '')[:40]}",
-                        now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote, media=media, video_id=video_id))
-            return True
-        host_key, host, collab_with = channel_key, None, None
-        llm_participation = True
 
     new_item, next_check_at = xtweet.build_item_from_video(
         info, channel_key=host_key, host=host, collab_with=collab_with, now_iso=now_iso,
@@ -4847,6 +4903,7 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         return True
 
     if changed:
+        _recheck_new_items(gh, now_iso, via=via)   # (v4.11.21) 앞서 올린 취소 · 변경 글과 대 본다
         _undo_item = ({"type": "replace_items", "items": [_pre]} if _pre
                       else {"type": "remove_items", "items": [{"video_id": video_id}]})
         if locals().get("llm_participation"):
@@ -5018,6 +5075,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         _llm_record(gh, "own_broadcast", channel_key, f"본인 예고로 등록 — {when} · {raw[:40]}", _own_reason,
                     undo=({"type": "replace_items", "items": [_pre]} if _pre
                           else {"type": "remove_items", "items": [{"id": row.get("id")}]}), now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote))
+        _recheck_new_items(gh, now_iso, via=via)   # (v4.11.21) 앞서 올린 취소 · 변경 글과 대 본다
     link = row.get("url") or ""
     _auto_dm(
         gh, "announced",   # (v4a) 옛 이름 scheduled — 레벨 표에 없어 v3.0 부터 안 나갔다
@@ -7953,6 +8011,8 @@ if _FLASK_AVAILABLE:
             ).get("changed")
             for _vid in _confirmed_vids:   # 등록 즉시 확인 — reconcile(영상) 적재 (원칙 ③)
                 _enqueue_wake_now(_vid, now_iso)
+            if changed:
+                _recheck_new_items(gh, now_iso)   # (v4.11.21) 멤버가 먼저 올린 취소 · 변경 글과 대 본다
             for _o in (_grp_ocr if changed else []):   # 이미지 OCR 판정으로 올린 그룹 영상 — LLM 판단 기록(되돌리기 = 확인 대기로)
                 _llm_record(gh, "ocr_members", "group",
                             f"이미지 OCR 로 참여 멤버 판정 — {','.join(_o['suggested'])} · {(_o.get('title') or '')[:30]}",
@@ -9207,7 +9267,8 @@ if __name__ == "__main__":
             def __init__(self, api_key):
                 pass
             def broadcast_change_targets(self, text, cands, now_label, quote_ja=None):
-                _FakeChangeLLM._CALLS.append({"text": text, "quote": quote_ja, "ids": [c["id"] for c in cands]})
+                _FakeChangeLLM._CALLS.append({"text": text, "quote": quote_ja, "ids": [c["id"] for c in cands],
+                                              "titles": [c["title"] for c in cands]})
                 r = dict(self._RESULT)
                 r.setdefault("target_ids", [c["id"] for c in cands] if r["action"] != "none" else [])
                 r.setdefault("reason", "self-test")
@@ -9324,15 +9385,80 @@ if __name__ == "__main__":
             assert gb.store[_PREVIEW_PATH]["items"][0]["scheduled_start"] == "2026-10-23T12:00:00Z"
             print("[OK] (v4.7.2 b) 권한 yt → 판정 후보 아님 · LLM 0회")
 
-            # c. 配信 · 변경어 없음 + 인용 URL 이 후보 영상과 무관 → LLM 0회
+            # c. (v4.11.21) 표현 문(정규식)이 없다 — 配信 · 변경어가 없는 글도 후보가 있으면 LLM 이 판정한다(none → 무변화)
             _FakeChangeLLM._CALLS.clear()
+            _FakeChangeLLM._RESULT = {"action": "none", "when": None}
             gc = _FakeGH()
             gc.store[_PREVIEW_PATH] = {"items": [dict(_RITSU_ITEM)]}
             _maybe_broadcast_change(gc, "今日もゲーム楽しかった！", "ritsu", _NOW_R, _CFG_RITSU,
                                     quote="https://youtube.com/watch?v=AAAAAAAAAAA")
-            assert not _FakeChangeLLM._CALLS, "무관한 글인데 LLM 호출"
+            assert len(_FakeChangeLLM._CALLS) == 1, _FakeChangeLLM._CALLS
             assert gc.store[_PREVIEW_PATH]["items"] == [_RITSU_ITEM]
-            print("[OK] (v4.7.2 c) 配信 · 변경어 없음 · 인용 URL 무관 → 스킵, LLM 0회")
+            print("[OK] (v4.11.21 c) 配信 · 변경어 없는 글도 LLM 판정 · none → 무변화")
+            _cx_it = dict(_RITSU_ITEM, id="pvCX", cancelled={"at": _NOW_R, "by": "tweet"})
+            assert [c["id"] for c in _change_candidates([_cx_it, dict(_RITSU_ITEM)], "ritsu")] == [_RITSU_ITEM["id"]]
+            _FakeChangeLLM._CALLS.clear()
+            gcx = _FakeGH()
+            gcx.store[_PREVIEW_PATH] = {"items": [_cx_it]}
+            _maybe_broadcast_change(gcx, "今日は休みます", "ritsu", _NOW_R, _CFG_RITSU)
+            assert not _FakeChangeLLM._CALLS, "취소됨 예고만 남았는데 LLM 호출"
+            print("[OK] (v4.11.21 c-1) 「취소됨」 예고는 판정 후보에서 빠진다 · 그것만 남으면 LLM 0회")
+            _fc = {"channels": {"yuno": {"name_ko": "센고쿠 유노", "channel_id": "UCyuno"},
+                                "ritsu": {"name_ko": "미네츠키 리츠", "channel_id": "UCritsu"},
+                                "group": {"name_ko": "그룹", "channel_id": "UCgroup"}}}
+            assert _cand_fact({"video_id": "v", "video_channel_id": "UCext", "collab_with": ["ritsu"]}, "yuno", _fc) \
+                == "미네츠키 리츠와 합동 · 외부 채널 방송(멤버 개인 채널 아님)"
+            assert _cand_fact({"video_id": "v", "video_channel_id": "UCyuno"}, "yuno", _fc) == "본인 개인 채널 방송"
+            assert _cand_fact({"video_id": "v", "video_channel_id": "UCritsu"}, "yuno", _fc) == "다른 멤버 · 그룹 채널 방송"
+            assert _cand_fact({"video_id": None}, "yuno", _fc) == "본인 개인 채널 방송(영상 미확정)"
+            assert _cand_fact({"video_id": "v"}, "yuno", _fc) == "", "채널 모르는 옛 영상 항목은 채널 사실 없음"
+            assert _cand_fact({"video_id": None, "host": "group", "collab_with": ["ritsu"]}, "yuno", _fc) == "미네츠키 리츠와 합동"
+            _FakeChangeLLM._CALLS.clear()
+            _FakeChangeLLM._RESULT = {"action": "none", "when": None}
+            gfc = _FakeGH()
+            gfc.store[_PREVIEW_PATH] = {"items": [dict(_RITSU_ITEM, title="T", title_ko=None, video_id=None, url=None)]}
+            _maybe_broadcast_change(gfc, "今日は休みます", "ritsu", _NOW_R, _CFG_RITSU)
+            assert _FakeChangeLLM._CALLS and _FakeChangeLLM._CALLS[0]["titles"] == ["T | 본인 개인 채널 방송(영상 미확정)"], _FakeChangeLLM._CALLS
+            print("[OK] (v4.11.21 c-2) 판정 후보 줄에 사실(합동 멤버 · 채널 종류)")
+
+            # c-3. (v4.11.21) 글보다 늦게 생긴 예고 — 2026-11-25 유노 18:44 취소 글 → 19:00 공식 스케줄 22:00.
+            # 새 예고를 그 멤버의 최근 글과 하나씩(최신부터) 대 보고, 취소면 그 글을 가리켜 「취소됨」 표시
+            class _PerTextLLM(_FakeChangeLLM):
+                def broadcast_change_targets(self, text, cands, now_label, quote_ja=None):
+                    _FakeChangeLLM._CALLS.append({"text": text, "ids": [c["id"] for c in cands]})
+                    hit = "お休み" in text
+                    return {"action": "del" if hit else "none", "target_ids": [c["id"] for c in cands] if hit else [],
+                            "when": None, "reason": "self-test"}
+            _llm_mod5.LLMClient = _PerTextLLM
+            _FakeChangeLLM._CALLS.clear()
+            _N3 = "2026-11-25T10:00:06Z"
+            gc3 = _FakeGH()
+            _y22 = {"id": "pv22", "channel_key": "yuno", "state": "announced", "scheduled_start": "2026-11-25T13:00:00Z",
+                    "info_source": "x-relay", "source": "x-relay", "first_seen": _N3, "video_id": None,
+                    "src_url": "https://x.com/i/status/2125529940603056365", "url": "https://www.youtube.com/@yuno_yumemita"}
+            _old = dict(_y22, id="pvOld", scheduled_start="2026-11-26T13:00:00Z", first_seen="2026-11-24T10:00:00Z")
+            gc3.store[_PREVIEW_PATH] = {"items": [_y22, _old]}
+            gc3.store[_TWEETS_PATH] = {"tweets": {"yuno": [
+                {"id": "2125526009885917567", "posted_at": "2026-11-25T09:44:25Z", "text": "今日の個人配信はお休みにさせていただきます！！",
+                 "url": "https://x.com/yuno_yumemita/status/2125526009885917567"},
+                {"id": "2125526338513809550", "posted_at": "2026-11-25T09:45:44Z", "text": "20時から！ パルカNEWS",
+                 "url": "https://x.com/yuno_yumemita/status/2125526338513809550"},
+                {"id": "1", "posted_at": "2026-11-23T09:00:00Z", "text": "お休み(24h 넘은 글 — 안 본다)", "url": "u"},
+            ]}}
+            _recheck_new_items(gc3, _N3)
+            _by = {i["id"]: i for i in gc3.store[_PREVIEW_PATH]["items"]}
+            assert (_by["pv22"].get("cancelled") or {}).get("tweet_id") == "2125526009885917567", _by["pv22"]
+            assert not _by["pvOld"].get("cancelled"), "이번에 생기지 않은 예고는 건드리지 않는다"
+            assert [("パルカ" in c["text"], "お休み" in c["text"]) for c in _FakeChangeLLM._CALLS] == [(True, False), (False, True)], \
+                _FakeChangeLLM._CALLS
+            _FakeChangeLLM._CALLS.clear()
+            gc4 = _FakeGH()
+            gc4.store[_PREVIEW_PATH] = {"items": [dict(_y22)]}
+            gc4.store[_TWEETS_PATH] = {"tweets": {"yuno": []}}
+            _recheck_new_items(gc4, _N3)
+            assert not _FakeChangeLLM._CALLS and not gc4.store[_PREVIEW_PATH]["items"][0].get("cancelled")
+            _llm_mod5.LLMClient = _FakeChangeLLM
+            print("[OK] (v4.11.21 c-3) 늦게 생긴 예고 → 최근 글과 하나씩 재확인 · 취소 글을 가리켜 「취소됨」 · 글 없으면 LLM 0회")
 
             # d. _apply_preview_edit date → info_source manual · 영상 없는 항목 expires_at 재계산
             _ITEM_D = {"id": "pvD", "channel_key": "ritsu", "state": "announced", "source": "personal",

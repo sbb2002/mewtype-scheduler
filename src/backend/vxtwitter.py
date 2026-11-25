@@ -132,7 +132,11 @@ def fetch_tweet_fx(tweet_id: str, *, session: Any = None, timeout: float = FX_TI
 def fetch_tweet(tweet_id: str, *, session: Any = None, timeout: float = VX_TIMEOUT_SEC,
                 base: str = "https://api.vxtwitter.com", fx_base: str = FX_BASE,
                 fallback: bool = True) -> dict | None:
-    """vxtwitter API 조회(실패 시 fxtwitter 폴백). tweet_id(Snowflake) → JSON dict | None.
+    """fxtwitter 조회(실패 시 vxtwitter 폴백). tweet_id(Snowflake) → vxtwitter 형식 JSON dict | None.
+
+    (v4.11.21) fxtwitter 를 먼저 쓴다 — vxtwitter 는 긴 글(note tweet)을 말없이 잘라 성공처럼 돌려준다
+    (2026-11-25 @PalworldOCG 352자 글이 255자로 잘려 끝의 YouTube URL 이 사라짐 → 유노 · 리츠 합동 방송 미등록).
+    fxtwitter 는 전문 + 펼친 URL 을 준다. 형식은 `_fx_to_vx` 가 vx 와 맞춘다(호출부는 전부 `extract` 를 거친다).
 
     Args:
         tweet_id: X 트윗 Snowflake id (숫자 문자열)
@@ -140,23 +144,22 @@ def fetch_tweet(tweet_id: str, *, session: Any = None, timeout: float = VX_TIMEO
         timeout: vxtwitter 초 (기본 5.0)
         base: vxtwitter API 베이스 URL
         fx_base: fxtwitter API 베이스 URL
-        fallback: False 면 vxtwitter 만
+        fallback: False 면 fxtwitter 만
 
     Returns:
         {"text": str, "mediaURLs": [...], "media_extended": [...], ...} or None
-        (fxtwitter 폴백 결과도 같은 형식)
     """
     if not tweet_id or not str(tweet_id).isdigit():
         warnings.warn(f"vxtwitter: 유효하지 않은 tweet_id={tweet_id}", stacklevel=2)
         return None
 
-    j = _get_json(f"{base}/i/status/{tweet_id}", session, timeout, "vxtwitter")
+    j = fetch_tweet_fx(tweet_id, session=session, base=fx_base)
     if j is not None or not fallback:
         return j
 
-    j = fetch_tweet_fx(tweet_id, session=session, base=fx_base)
+    j = _get_json(f"{base}/i/status/{tweet_id}", session, timeout, "vxtwitter")
     if j is not None:
-        _log.warning("vxtwitter 실패 → fxtwitter 폴백 성공 tweet=%s", tweet_id)
+        _log.warning("fxtwitter 실패 → vxtwitter 폴백 성공 tweet=%s", tweet_id)
     return j
 
 
@@ -411,27 +414,37 @@ if __name__ == "__main__":
 
     TID = "2100895649764192693"
 
-    # (8) vx 500 → fx 폴백: 본문·참조 트윗 전문·사진(`?name=orig` 제거)
+    # (8) fx 먼저: 본문·참조 트윗 전문·사진(`?name=orig` 제거), vx 는 부르지 않는다
     s = _Sess(_Resp(500), _Resp(200, fx_real))
     j = fetch_tweet(TID, session=s)
     assert j and j["text"] == "2年半前…💛💙" and j["qrtURL"].endswith("/status/1776172940654219620"), j
     ex = extract(j)
     assert ex["qrt"] == {"text": QUOTE_TEXT, "media": ["https://pbs.twimg.com/media/GKT1eNvakAEbC3Q.png"]}, ex["qrt"]
     assert qrt_id(ex["qrt_url"]) == "1776172940654219620"
-    assert len(s.calls) == 2 and "vxtwitter" in s.calls[0] and "fxtwitter" in s.calls[1], s.calls
-    print("  vx 500 → fx 폴백 → 참조 트윗 전문·사진 복원")
+    assert len(s.calls) == 1 and "fxtwitter" in s.calls[0], s.calls
+    print("  fx 우선 → 참조 트윗 전문·사진 복원, vx 미호출")
 
-    # (9) vx 정상이면 fx 는 부르지 않는다 (무회귀)
-    s = _Sess(_Resp(200, {"text": "본문", "mediaURLs": [], "qrtURL": None}), _Resp(200, fx_real))
-    assert fetch_tweet(TID, session=s)["text"] == "본문" and len(s.calls) == 1
-    print("  vx 정상 → fx 미호출")
+    # (8-b, v4.11.21) 긴 글(note tweet) — vx 는 잘린 본문을 200 으로 준다. fx 가 정본이라 끝의 URL 이 남는다
+    # (2026-11-25 유노가 인용한 @PalworldOCG 글 실측 축약)
+    _long = "【第1回 配信情報】\n🗓 11月25日（水）20:00～\n🔗 配信URL\nhttps://youtube.com/live/zdFXJG5tRWc\n🔔 通知"
+    s = _Sess(_Resp(200, {"text": "引用", "qrtURL": "https://twitter.com/i/status/3",
+                          "qrt": {"text": "【第1回 配信情報】\n🗓 11月25日（水）20:00～\n🔗 配信URL"}}),
+              _Resp(200, {"tweet": {"id": "4", "text": "引用", "quote": {"id": "3", "text": _long, "is_note_tweet": True}}}))
+    ex = extract(fetch_tweet("4", session=s))
+    assert "zdFXJG5tRWc" in ex["qrt"]["text"] and len(s.calls) == 1, (ex, s.calls)
+    print("  긴 글 → fx 전문(끝의 YouTube URL 유지)")
 
-    # (10) 예외(타임아웃)·JSON 오류도 폴백, 둘 다 실패면 None (종전 동작)
-    assert fetch_tweet(TID, session=_Sess(TimeoutError("t"), _Resp(200, fx_real)))["text"] == "2年半前…💛💙"
-    assert fetch_tweet(TID, session=_Sess(_Resp(200, None), _Resp(200, fx_real)))["text"] == "2年半前…💛💙"
+    # (9) fx 실패 → vx 폴백
+    s = _Sess(_Resp(200, {"text": "본문", "mediaURLs": [], "qrtURL": None}), _Resp(500))
+    assert fetch_tweet(TID, session=s)["text"] == "본문" and len(s.calls) == 2 and "vxtwitter" in s.calls[1]
+    print("  fx 실패 → vx 폴백")
+
+    # (10) 예외(타임아웃)·JSON 오류도 폴백, 둘 다 실패면 None
+    assert fetch_tweet(TID, session=_Sess(_Resp(200, {"text": "본문"}), TimeoutError("t")))["text"] == "본문"
+    assert fetch_tweet(TID, session=_Sess(_Resp(200, {"text": "본문"}), _Resp(200, None)))["text"] == "본문"
+    assert fetch_tweet(TID, session=_Sess(_Resp(200, {"text": "본문"}), _Resp(200, {"code": 404, "tweet": None})))["text"] == "본문"
     assert fetch_tweet(TID, session=_Sess(_Resp(500), _Resp(404))) is None
-    assert fetch_tweet(TID, session=_Sess(_Resp(500), _Resp(200, {"code": 404, "tweet": None}))) is None
-    assert fetch_tweet(TID, session=_Sess(_Resp(500), _Resp(200, fx_real)), fallback=False) is None
+    assert fetch_tweet(TID, session=_Sess(_Resp(200, {"text": "본문"}), _Resp(500)), fallback=False) is None
     assert fetch_tweet("abc") is None
     print("  타임아웃·JSON 오류 폴백 / 둘 다 실패·fallback=False → None")
 
