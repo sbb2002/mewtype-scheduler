@@ -776,7 +776,9 @@ def merge_video_confirmed(prev_items: list[dict], video_id: str, new_item: dict,
         cur["state_since"] = now_iso
 
     # (v3.8.3) 게스트 감지는 추가만 — 기존 collab_with 는 절대 안 줄인다(재-ingest 로 보정 가능)
-    added = [k for k in (new_item.get("collab_with") or []) if k not in (cur.get("collab_with") or [])
+    # (v4.11.21) 같은 영상을 다른 멤버가 자기 글로 올렸으면(외부 채널 — 각자 참여 판정을 통과) 그 멤버도 참여자다
+    _new = [*(new_item.get("collab_with") or []), *([new_item["channel_key"]] if new_item.get("channel_key") else [])]
+    added = [k for k in dict.fromkeys(_new) if k not in (cur.get("collab_with") or [])
              and k != cur.get("channel_key")]
     if added:
         cur["collab_with"] = [*(cur.get("collab_with") or []), *added]
@@ -1457,6 +1459,13 @@ if __name__ == "__main__":
     _out2, _ = merge_video_confirmed(_out, "V1", dict(_new, collab_with=None), "2026-09-21T13:01:00Z")
     assert _out2[0]["collab_with"] == ["yuno"], "재-ingest 가 기존 collab_with 를 지우면 안 됨"
     print("[OK] merge_video_confirmed  (collab_with 추가만, 기존 값 보존)")
+    # (v4.11.21) 외부 채널 영상 — 리츠 글로 먼저 생긴 항목에 유노 글이 같은 영상으로 오면 유노가 합동으로 붙는다(2026-11-25 파루카NEWS)
+    _ext = [{"id": "pv2", "channel_key": "ritsu", "video_id": "VX", "state": "upcoming", "collab_with": None, "kind": None}]
+    _o3, _ = merge_video_confirmed(_ext, "VX", dict(_ext[0], channel_key="yuno"), "2026-11-25T09:45:46Z")
+    assert _o3[0]["channel_key"] == "ritsu" and _o3[0]["collab_with"] == ["yuno"] and _o3[0]["kind"] == "collab", _o3
+    _o4, _ch4 = merge_video_confirmed(_o3, "VX", dict(_ext[0], channel_key="ritsu"), "2026-11-25T09:50:00Z")
+    assert _o4[0]["collab_with"] == ["yuno"], "호스트 본인 재-ingest 는 참여자를 바꾸지 않는다"
+    print("[OK] merge_video_confirmed  (같은 외부 영상을 다른 멤버가 올리면 합동)")
 
     # find_active_item (v3.8.7) — 방송 취소/변경 LLM 판정 대상 찾기
     _items_fa = [

@@ -289,7 +289,7 @@ def _suppress_note(t, vid: str | None) -> str:
 def _change_plan(t, raw: str, host: str, now: str) -> dict:
     """(v4a) 「내용 감지를 통한 예고 수정」 — 글에서 방송 취소·변경을 감지하고 영향받는 예고를 고른다(미리보기용, 저장 안 함).
     반환 {"action": del|edit|none|failed, "when_iso", "candidates": [{"id","when","title","selected"}], "message"?}"""
-    plan = t._detect_broadcast_change(raw, host, now, list_preview().get("items", []))
+    plan = t._detect_broadcast_change(raw, host, now, list_preview().get("items", []), gh=_store())
     if plan is None:
         return {"action": "failed", "when_iso": None, "candidates": [],
                 "message": "판정에 실패했습니다(LLM 사용 불가 또는 응답 없음) — 예고는 바뀌지 않습니다"}

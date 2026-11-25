@@ -89,7 +89,7 @@ src/
     xtweet.py          # 개인 5인 트윗 — route_by_title · tweets.json 계약(게시 + 48h) · 개인 예고 파싱 · apply_overrides
     banners.py         # 행사 배너 banners.json 계약(J) — 판정 반영 · 상태 파생 · 정리
     songs.py           # 신곡 감지 · songs.json 계약 · 곡 관리 (§8.15)
-    vxtwitter.py       # 트윗 unfurl — vxtwitter, 실패 시 fxtwitter
+    vxtwitter.py       # 트윗 unfurl — fxtwitter, 실패 시 vxtwitter (v4.11.21 순서 바꿈)
     # ── 외부 판단
     llm.py             # Groq — 번역 · 소식 제목/분류/시점 · 예고/참여/변경 판정 · 행사 판정 · 라이브 정보 (429 = 모델 막기)
     vision.py          # Groq 비전 OCR — 출연진 이름 · 행사 카드 글자
@@ -798,9 +798,19 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   LLM 변경 판정이 옮긴 시각은 `"personal"`, 1회 동작의 YouTube 반영은 `"api"`. 영상 없는 예고는 `expires_at` 도 새 시각으로 다시 계산(안 하면 옛 시각 + 3h 에 지워진다).
 - `merge_video_confirmed` 의 시각: x-relay = 덮지 않음 · manual = YouTube 예약 시각이 실제로 바뀌었을 때만 · personal = API 를 처음 볼 때(`api_start_seen` 없음) 또는 실제로 바뀌었을 때만 ·
   그 밖 = API. 실제로 바뀌어 덮은 manual · personal 은 `info_source="api"` 로.
-- **변경 판정 게이트**(`telegram_app._maybe_broadcast_change`, 개인 트윗마다): 본문에 `配信` · 또는 변경어(`_CHANGE_WORD_RE` = 変更 · 延期 · 中止 · 休み · おやすみ · お休み · 見送 · ずら · 遅ら · 遅れ ·
-  リスケ · 取りやめ · キャンセル · 休配 등) · 또는 인용문 속 영상 id 가 이 멤버 판정 후보의 `video_id`. 후보(권한 x_yt 인 활성 예고)가 없으면 LLM 을 부르지 않는다.
+- `merge_video_confirmed` 의 참여자(v4.11.21): 같은 영상을 **다른 멤버가 자기 글로** 올리면(외부 채널 영상 — 각자 참여 판정 통과) 그 멤버를 `collab_with` 에 더한다(추가만).
+  외부 채널 영상도 참여 판정 뒤 게스트 이름 탐색(`find_guest_members` + LLM 확인)을 거친다 — 인용한 외부 공지에 다른 멤버가 출연자로 적힌 경우(2026-11-25 파루카NEWS, 리츠 · 유노).
+- **변경 판정 대상**(`telegram_app._maybe_broadcast_change`, 개인 트윗마다): (v4.11.21) **글 표현으로 거르는 문은 없다** — 전엔 본문에 `配信` · 변경어 정규식
+  (`_CHANGE_WORD_RE`) · 후보 영상 id 인용 중 하나가 있어야 LLM 에 갔다. 목록에 없는 표현은 판정조차 못 받으므로(2026-11-25 운영자 지시 — 정규식 방식 사절) 지웠다.
+  후보(권한 x_yt 인 활성 예고)가 없으면 LLM 을 부르지 않는다 — 비용 상한은 이것뿐이다.
   인용문은 `llm.broadcast_change_targets(quote_ja=…)` 로 본문 뒤에 참고용(600자)으로 붙고, 판단 기록 `input` 에도 남아 재판단 때 쓰인다.
+- **후보 설명** `about`(v4.11.21, `telegram_app._cand_about`): 후보 줄마다 사실만 붙인다 — 출처(공식 일일 스케줄 · 멤버 본인 예고 글 · YouTube 예약 · 운영자 입력) ·
+  영상 확정 여부 · 함께하는 멤버 · 멤버십 한정 · **근거 글**(예고를 만든 멤버 글 본문 120자, `src_url` 의 id 로 tweets.json → 보관함에서 찾음).
+  표현 해석 규칙(「〜だけ」 등)은 두지 않는다. 계기: 유노 「今日の個人配信はお休み」 가 「20:00 (제목 없음)」 만 보고 외부 채널 출연(パルカNEWS)을 골랐다.
+- **늦게 생긴 예고 재확인**(v4.11.21, `telegram_app._recheck_new_items`): 공식 일일 스케줄 · 본인 텍스트 예고 · 트윗 속 URL 예고가 **새 예고**(`first_seen == now`)를 만들면,
+  그 멤버의 최근 24h 글(이 예고를 만든 글 제외)을 **하나씩 최신부터** 1회 판정(`_auto_edit_once_core(tweets=[글])`)에 넣고 취소 · 변경이 나오면 멈춘다(최대 4건).
+  「취소됨」 은 판정한 그 글을 가리킨다. 글이 없으면 LLM 0회. 계기: 유노 18:44 취소 글 → 19:00 공식 스케줄이 22:00 을 새로 올려 그대로 남았다.
+  **확인 필요**: 수집(RSS · `videos.list`)이 새로 만든 예고는 이 재확인을 거치지 않는다(백엔드 쓰기 서비스에서 `/write` 를 다시 부르면 동시 1 이라 막힌다).
 - **관리 페이지 「자동 수정 권한」**(예고 편집 팝업 맨 아래 구역): 점 3개 슬라이더 [수동 · YT · X&YT] + 켜짐 표시 2칸(X 트윗 판정 · YouTube 예약 시각) + 단계별 동작 설명(Groq 횟수) + 이 예고에 연결된 트윗.
   목록 카드엔 기본이 아닐 때 「권한: 수동 / YT」 배지. API `edit_preview` 의 patch 키 `auto_edit`.
 - **1회 동작**(권한을 바꿔 저장했을 때만, `telegram_app._auto_edit_once` — 결과 한 줄이 저장 토스트에):
@@ -1080,11 +1090,16 @@ ID 미상)면 `resolved=False`: TUNEIN 은 이 포맷이 실제로 오는지 미
 없이 **완결된 문장처럼 보이는 상태로 조용히 잘려서** 온다(실측: 문단 9개짜리 트윗이 앞 3개
 문단·125자만 옴 — 버그리포트 20260913 #2). 이런 "조용한 잘림"은 텍스트 패턴만으로는 감지가
 불가능하다 — 그래서 손상/잘림을 감지해 사후 복구하는 방식(v3.1.6, 폐기)이 아니라, **`tag`에서
-tweet id 를 뽑을 수 있으면 무조건 vxtwitter 를 먼저 조회해 그 `text`를 정본으로 쓰고, 실패
+tweet id 를 뽑을 수 있으면 무조건 트윗 조회(`vxtwitter.fetch_tweet` — v4.11.21 부터 **fxtwitter 먼저, 실패 시 vxtwitter**)를 해 그 `text`를 정본으로 쓰고, 실패
 (조회 안 됨·id 없음·network/404)할 때만 폰이 보낸 `raw`로 폴백**한다. 소식(`xnotice`)·
 스케줄(`xrelay`)·개인트윗(`xtweet`) 모든 하위 파이프라인 **이전**에 태워서 항상 최선의 원문을
 넘긴다. 기존 `_expand_truncated_yt`(URL만 복구, `_maybe_personal_schedule` 직전 2차 안전망)와
 별개 경로 — 이쪽이 먼저 돌아 raw 를 이미 온전하게 만들어놓으므로 대개 no-op.
+
+(v4.11.21) **vxtwitter 는 긴 글(note tweet)을 말없이 잘라 200 으로 준다** — 2026-11-25 @PalworldOCG 352자 글이 255자로 잘려 끝의
+`🔗 配信URL https://youtube.com/live/…` 가 사라졌고, 그 글을 인용한 유노 · 리츠의 합동 방송 예고가 둘 다 등록되지 않았다.
+fxtwitter 는 전문 · 펼친 URL · `is_note_tweet` 를 준다. 그래서 순서를 바꿨다. 형식은 `_fx_to_vx` 가 vx 와 맞추고 호출부는 전부 `extract` 를 거친다.
+잘림을 길이로 추측하는 방식은 쓰지 않는다(조용한 잘림은 텍스트로 감지 불가 — 위와 같은 이유).
 
 ### 8.7 `gh_store.py` — GitHub Contents API
 
